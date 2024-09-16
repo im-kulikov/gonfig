@@ -55,6 +55,24 @@ func (p *parserFunc) Load(dest interface{}) error {
 	return p.call(dest)
 }
 
+// NewCustomParser creates a new custom parser with the specified name and loader function.
+//
+// Parameters:
+//   - name: A ParserType value representing the name or type of the custom parser.
+//   - Loader: A function that takes an interface{} and returns an error. This function
+//     defines how the custom parser should load or parse the configuration data.
+//
+// Returns:
+//   - A Parser interface which is implemented by the custom parser. This allows the
+//     library to use the provided loader function to process configuration data according
+//     to the specified ParserType.
+//
+// Example usage:
+//
+//	customParser := NewCustomParser("myCustomParser", func(cfg interface{}) error {
+//	    // Custom parsing logic here
+//	    return nil
+//	})
 func NewCustomParser(name ParserType, Loader func(interface{}) error) Parser {
 	return &parserFunc{name: name, call: Loader}
 }
