@@ -16,20 +16,6 @@ type Parser interface {
 	Type() ParserType
 }
 
-// ParserUsage interface provides a way to retrieve information about configuration methods
-// and options that a parser supports. It is intended to help users understand how to specify
-// and use different configuration sources.
-type ParserUsage interface {
-	// Usage returns information about configuration methods supported by the parser.
-	// This includes details on:
-	// - command-line flags
-	// - environment variables
-	// - configuration files
-	// - other configuration methods
-	// The returned string describes the available configuration options and how they can be used.
-	Usage() string
-}
-
 // parserFunc is a concrete implementation of the Parser interface.
 // It wraps a function that performs the actual loading of configuration data.
 // The `name` field stores the type of the parser, and the `call` field holds the function

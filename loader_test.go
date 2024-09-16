@@ -3,6 +3,7 @@ package gonfig_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"reflect"
@@ -34,9 +35,10 @@ const (
 	parserCustomType gonfig.ParserType = "custom"
 )
 
-func testCustomParsers() []gonfig.LoaderOption {
+func testCustomOptions() []gonfig.LoaderOption {
 	return []gonfig.LoaderOption{
 		gonfig.WithCustomParser(nil),
+		gonfig.WithCustomExit(func(int) {}),
 		gonfig.WithCustomParser(gonfig.NewCustomParser(parserCustomType, customLoad)),
 		gonfig.WithCustomParserInit(newTestJSONParser),
 	}
@@ -99,7 +101,7 @@ func testLoaderOptions(args, envs []string) (gonfig.Config, gonfig.LoaderOption)
 			Envs: envs,
 
 			LoaderOrder: []gonfig.ParserType{gonfig.ParserDefaults, gonfig.ParserEnv, gonfig.ParserFlags, parserJSONType, parserCustomType}},
-		gonfig.WithOptions(testCustomParsers)
+		gonfig.WithOptions(testCustomOptions)
 }
 
 func TestNew(t *testing.T) {
@@ -130,4 +132,38 @@ func TestNew(t *testing.T) {
 	require.Equal(t, math.MaxInt, config.IntField, "int-value should be set")
 	require.Equal(t, math.MaxInt, config.CustomField, "custom-field should be set")
 	require.Equal(t, time.Second*15, config.Timeout, "timeout field should be set")
+}
+
+func TestUsage(t *testing.T) {
+	buf, out, err := os.Pipe()
+	require.NoError(t, err)
+
+	old := os.Stdout
+	defer func() { os.Stdout = old }()
+
+	os.Stdout = out
+
+	var (
+		conf TestLoaderConfig
+		envs []string
+		args = []string{"--help"}
+	)
+	require.NoError(t, gonfig.New(testLoaderOptions(args, envs)).Load(&conf))
+
+	require.NoError(t, out.Close())
+
+	expectedOutput := `Usage of flags:
+      --int-value int         
+      --json-config string    
+      --string-field string    (default "default_value")
+
+Environment variables:
+  - 'INT_VALUE' <int>
+  - 'TIMEOUT' <time.Duration>
+`
+
+	tmp, err := io.ReadAll(buf)
+	require.NoError(t, err)
+	require.NoError(t, buf.Close())
+	require.Equal(t, expectedOutput, string(tmp))
 }

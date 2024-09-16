@@ -1,16 +1,29 @@
 package gonfig
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/pflag"
 )
+
+// EnvUsageOption defines a function type used to configure options for environment variable usage.
+type EnvUsageOption func(*envUsageOptions)
+
+// envUsageOptions holds configuration options for generating environment variable usage information.
+type envUsageOptions struct {
+	prefix string // Optional prefix to be added to environment variable names.
+}
 
 const (
 	envPairDelim = "=" // Delimiter used to separate environment variable names from their values.
 	envDelimiter = "_" // Delimiter used to separate parts of the environment variable name.
+
+	envTag = "env"
 )
 
 // newEnvLoader creates a new parser that loads configuration from environment variables.
@@ -20,6 +33,146 @@ func newEnvLoader(envs []string, prefix string) Parser {
 	return &parserFunc{name: ParserEnv, call: func(v interface{}) error {
 		return LoadEnvs(PrepareEnvs(envs, prefix), v)
 	}}
+}
+
+// EnvUsageWithPrefix creates an EnvUsageOption that sets a prefix for environment variables.
+// This prefix is applied to each environment variable name when generating usage information.
+//
+// Parameters:
+//   - prefix: The string prefix to add to environment variable names.
+//
+// Returns:
+//   - EnvUsageOption: A function that modifies the prefix in envUsageOptions.
+func EnvUsageWithPrefix(prefix string) EnvUsageOption {
+	return func(opts *envUsageOptions) { opts.prefix = prefix }
+}
+
+// UsageOfEnvs generates a human-readable string that describes the environment variables
+// expected by a given structure, based on struct tags (e.g., "env" and "usage").
+//
+// Parameters:
+//   - dest: A pointer to a struct that defines the expected environment variables.
+//     The struct's fields must use the "env" tag to define environment variable names
+//     and the "usage" tag to describe their purpose.
+//   - opts: Optional EnvUsageOption(s) to configure behavior, such as adding a prefix to environment variable names.
+//
+// Returns:
+//   - A string describing the environment variables and their usage, or an empty string if the input is not valid.
+//
+// The function ensures that the input is a pointer to a struct. It traverses the struct fields,
+// generating usage information based on the tags. If a struct field is another struct, it recurses
+// into the nested fields.
+func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
+	val := reflect.ValueOf(dest)
+
+	// Ensure that the input is a pointer to a struct.
+	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+		return ""
+	}
+
+	var options envUsageOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	var result string
+	if result = prepareEnvUsage(val.Elem(), options.prefix); result == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("Environment variables:\n%s", result)
+}
+
+// wrapUsageLoader wraps the provided loader function to add additional functionality
+// for handling help flags and printing environment variable usage. It ensures that when
+// the help flag (`--help`) is provided, the program prints the environment variable usage
+// and exits gracefully. This function is typically used to augment the configuration loading
+// mechanism.
+//
+// The wrapped handler function behaves as follows:
+//  1. If the handler returns an error equal to `pflag.ErrHelp`, it prints environment variable
+//     usage (with an optional prefix) and terminates the program.
+//  2. If any other error occurs during the handler execution, the error is returned.
+//  3. On successful execution of the handler without errors, it proceeds normally.
+//
+// Params:
+// - svc: The *loader, which contains the `EnvPrefix` and an optional custom exit function.
+// - handler: The function responsible for loading the configuration (e.g., from flags or envs).
+//
+// Returns:
+// - A new function that wraps the original handler with additional error handling and help output logic.
+func wrapUsageLoader(svc *loader, handler func(v any) error) func(v any) error {
+	return func(v any) error {
+		// Attempt to load the configuration
+		if err := handler(v); errors.Is(err, pflag.ErrHelp) {
+			// If the error is the help flag, print environment variable usage
+			fmt.Println()
+			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(svc.EnvPrefix)))
+
+			// Handle program exit for tests or production
+			if svc.exit != nil {
+				svc.exit(0)
+				return nil // allows tests to proceed without terminating the program
+			}
+
+			// If no custom exit function is provided, exit the program
+			os.Exit(0)
+		} else if err != nil {
+			// Return any other errors from the loader
+			return err
+		}
+
+		return nil
+	}
+}
+
+// prepareEnvUsage recursively processes the fields of a struct to generate environment variable
+// usage information, including descriptions and default values (if provided).
+//
+// Parameters:
+//   - v: The reflect.Value representing the struct to process.
+//   - prefix: A string prefix to apply to environment variable names.
+//
+// Returns:
+//   - A string describing the environment variables for the given struct, including the name, type,
+//     and usage description for each variable.
+//
+// The function iterates through each field of the struct, checking for the "env" tag to determine the
+// environment variable name. It uses the "usage" tag to describe the variable's purpose, and adds any
+// default values if specified in the "default" tag. For nested structs, the function recurses to process
+// the fields of the embedded structure.
+func prepareEnvUsage(v reflect.Value, prefix string) string {
+	t := v.Type()
+	if prefix != "" {
+		prefix += envPairDelim
+	}
+
+	out := make([]string, 0, t.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		var name string
+		if name = t.Field(i).Tag.Get(envTag); name == "" || name == "-" {
+			continue
+		}
+
+		var usage string
+		if usage = t.Field(i).Tag.Get(FlagTagUsage); usage != "" {
+			usage = " — " + usage
+		}
+
+		if defaults := t.Field(i).Tag.Get("default"); defaults != "" {
+			usage += fmt.Sprintf(" (default %s)", defaults)
+		}
+
+		if t.Field(i).Type.Kind() != reflect.Struct {
+			out = append(out, fmt.Sprintf("  - '%s' <%s>%s", prefix+name, t.Field(i).Type, usage))
+
+			continue
+		}
+
+		out = append(out, prepareEnvUsage(v.Field(i), prefix+name))
+	}
+
+	return strings.Join(out, "\n")
 }
 
 // PrepareEnvs prepares a map from the given environment variable slice.
@@ -128,7 +281,7 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 func LoadEnvs(envs map[string]interface{}, dest any) error {
 	conf := &mapstructure.DecoderConfig{
 		Result:     dest,
-		TagName:    "env",
+		TagName:    envTag,
 		DecodeHook: decodeEnv()}
 	if dec, err := mapstructure.NewDecoder(conf); err != nil {
 		return fmt.Errorf("could not prepare encoder: %w", err)

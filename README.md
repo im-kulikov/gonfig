@@ -1,7 +1,7 @@
 ![gonfig](.github/logo-x2.png)
 
 [![GitHub Workflow Status](https://github.com/im-kulikov/gonfig/actions/workflows/go.yml/badge.svg)](https://github.com/im-kulikov/gonfig/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/im-kulikov/gonfig?style=flat-square)](https://goreportcard.com/report/github.com/im-kulikov/gonfig)
+[![Go Report Card](https://goreportcard.com/badge/github.com/im-kulikov/gonfig)](https://goreportcard.com/report/github.com/im-kulikov/gonfig)
 ![Go version](https://img.shields.io/github/go-mod/go-version/im-kulikov/gonfig?style=flat&label=Go%20%3E%3D)
 [![PkgGoDev](https://pkg.go.dev/badge/mod/github.com/im-kulikov/gonfig)](https://pkg.go.dev/mod/github.com/im-kulikov/gonfig)
 

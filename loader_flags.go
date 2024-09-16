@@ -3,6 +3,7 @@ package gonfig
 import (
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ const (
 	FlagTag      = "flag"       // FlagTag is tag used to specify the flag name for a field.
 	FlagTagUsage = "usage"      // FlagTagUsage is tag used to specify the usage description for a flag.
 	FlagTagShort = "flag-short" // FlagTagShort is tag used to specify a short flag name (single-character) for a field.
-	FlagSetName  = "cli"        // FlagSetName is name of the flag set for the command-line interface.
+	FlagSetName  = "flags"      // FlagSetName is name of the flag set for the command-line interface.
 )
 
 // newFlagsLoader creates a new parser that loads configuration from command-line flags.
@@ -29,6 +30,8 @@ func newFlagsLoader(args []string) Parser {
 		if err := PrepareFlags(set, val); err != nil {
 			return err
 		}
+
+		set.SetOutput(os.Stdout)
 
 		return set.Parse(args)
 	}}

@@ -83,6 +83,8 @@ type Config struct {
 type loader struct {
 	Config
 	groups map[ParserType]Parser
+
+	exit func(int) // used for tests, to ignore os.Exit
 }
 
 // LoaderOption defines a function type used to customize the behavior of the loader.
@@ -253,6 +255,10 @@ func WithOptions(options any) LoaderOption {
 	}
 }
 
+func WithCustomExit(exit func(int)) LoaderOption {
+	return func(l *loader) error { l.exit = exit; return nil }
+}
+
 // setLoaderDefaults initializes a loader with default values based on the provided configuration.
 // It sets up the environment variables, command-line arguments, and the order in which parsers
 // will be applied, ensuring defaults are in place if not explicitly provided in the Config.
@@ -318,7 +324,7 @@ func New(config Config, options ...LoaderOption) Parser {
 	svc := setLoaderDefaults(config)
 
 	// return group parser
-	return &parserFunc{call: func(v interface{}) error {
+	return &parserFunc{call: wrapUsageLoader(svc, func(v interface{}) error {
 		for _, option := range options {
 			if err := option(svc); err != nil {
 				return fmt.Errorf("gonfig: could not init option: %w", err)
@@ -336,5 +342,5 @@ func New(config Config, options ...LoaderOption) Parser {
 		}
 
 		return ValidateRequiredFields(v)
-	}}
+	})}
 }
