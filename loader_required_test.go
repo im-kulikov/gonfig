@@ -66,7 +66,7 @@ func TestValidateRequiredFields(t *testing.T) {
 			name:    "Missing required fields",
 			input:   &User{},
 			wantErr: true,
-			errMsg:  "missing required fields:\n\t- field `Name` <string> is required\n\t- field `Email` <string> is required\n\t- field `City` <string> in path `Address.City` is required\n\t- field `Country` <string> in path `Address.Country` is required\n\t- field `IP` <net.IP> is required",
+			errMsg:  "missing required fields:\n\t- field `Name` <string> is required\n\t- field `Email` <string> is required\n\t- field `IP` <net.IP> is required\n\t- field `City` <string> in path `Address.City` is required\n\t- field `Country` <string> in path `Address.Country` is required",
 		},
 		{
 			name: "Missing nested structure required fields",
@@ -108,19 +108,19 @@ func TestValidateRequiredFields(t *testing.T) {
 			name:    "Non-pointer input",
 			input:   User{Name: "John"},
 			wantErr: true,
-			errMsg:  "input must be a pointer to a struct",
+			errMsg:  "(require) expect pointer, got \"struct\"",
 		},
 		{
 			name:    "Non-struct pointer",
 			input:   new(int),
 			wantErr: true,
-			errMsg:  "input must be a pointer to a struct",
+			errMsg:  "(require) expect struct field, got \"int\"",
 		},
 		{
 			name:    "Pointer to a nil struct",
 			input:   (*User)(nil),
 			wantErr: true,
-			errMsg:  "input must be a pointer to a struct",
+			errMsg:  "(require) expect struct field, got \"invalid\"",
 		},
 	}
 

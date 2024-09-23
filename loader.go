@@ -5,6 +5,10 @@ import (
 	"os"
 )
 
+// constantError is a custom error type based on a string.
+// It represents an error that is constant and does not change at runtime.
+type constantError string
+
 // Config holds the configuration options for loading settings using various parsers such as defaults,
 // environment variables, and command-line flags.
 //
@@ -47,9 +51,6 @@ type Config struct {
 
 	EnvPrefix string // EnvPrefix for environment variables.
 
-	// LoaderOrder allows to set priority for Parser's.
-	LoaderOrder []ParserType
-
 	// Envs hold the environment variable from which envs will be parsed.
 	// By default, is nil and then os.Environ() will be used.
 	Envs []string
@@ -82,6 +83,9 @@ type Config struct {
 // execute them in the order defined by `LoaderOrder`, applying each configuration in sequence.
 type loader struct {
 	Config
+
+	config string
+	orders []ParserType
 	groups map[ParserType]Parser
 
 	exit func(int) // used for tests, to ignore os.Exit
@@ -150,7 +154,15 @@ const (
 	//   reads configuration values from environment variables, which can be used to configure
 	//   the application in different deployment environments.
 	ParserEnv ParserType = "env"
+
+	// ParserConfigSet Represents the parser type that handles command-line flags. This parser
+	//   processes the command-line arguments passed to the program to set config path.
+	ParserConfigSet ParserType = "config-setter"
 )
+
+// Error implements the error interface for the constantError type.
+// It returns the error message as a string, which is the underlying value of the constantError.
+func (e constantError) Error() string { return string(e) }
 
 // WithCustomParser creates a LoaderOption that adds a custom parser to the loader's group of parsers.
 // This function allows you to inject a parser into the loader, which will be used to handle a specific
@@ -181,6 +193,7 @@ func WithCustomParser(p Parser) LoaderOption {
 		}
 
 		l.groups[p.Type()] = p
+		l.orders = append(l.orders, p.Type())
 
 		return nil
 	}
@@ -207,8 +220,11 @@ func WithCustomParserInit(fabric ParserInit) LoaderOption {
 		switch parser, err := fabric(l.Config); {
 		case err != nil:
 			return err
+		case parser == nil:
+			return nil
 		default:
 			l.groups[parser.Type()] = parser
+			l.orders = append(l.orders, parser.Type())
 
 			return nil
 		}
@@ -277,32 +293,30 @@ func WithCustomExit(exit func(int)) LoaderOption {
 // Returns:
 // - A pointer to a `loader` struct, which contains the updated Config and the map of available parsers.
 func setLoaderDefaults(c Config) *loader {
-	if c.Envs == nil {
-		c.Envs = os.Environ()
+	svc := &loader{Config: c, groups: make(map[ParserType]Parser, 4)}
+
+	if svc.Envs == nil {
+		svc.Envs = os.Environ()
 	}
 
-	if c.Args == nil {
-		c.Args = os.Args[1:]
+	if svc.Args == nil {
+		svc.Args = os.Args[1:]
 	}
 
-	if c.LoaderOrder == nil {
-		c.LoaderOrder = []ParserType{ParserDefaults, ParserEnv, ParserFlags}
+	if !svc.SkipDefaults {
+		svc.groups[ParserDefaults] = newDefaultParser()
 	}
 
-	parsers := make(map[ParserType]Parser)
-	if !c.SkipDefaults {
-		parsers[ParserDefaults] = newDefaultParser()
+	if !svc.SkipEnv {
+		svc.groups[ParserEnv] = newEnvLoader(svc.Envs, svc.EnvPrefix)
 	}
 
-	if !c.SkipEnv {
-		parsers[ParserEnv] = newEnvLoader(c.Envs, c.EnvPrefix)
+	if !svc.SkipFlags {
+		svc.groups[ParserFlags] = newFlagsLoader(svc.Args)
+		svc.groups[ParserConfigSet] = parseConfigPath(svc)
 	}
 
-	if !c.SkipFlags {
-		parsers[ParserFlags] = newFlagsLoader(c.Args)
-	}
-
-	return &loader{Config: c, groups: parsers}
+	return svc
 }
 
 // New creates a new Parser based on the provided configuration and optional LoaderOptions.
@@ -331,13 +345,33 @@ func New(config Config, options ...LoaderOption) Parser {
 			}
 		}
 
-		for _, typ := range svc.LoaderOrder {
-			if svc.groups[typ] == nil {
-				return fmt.Errorf("gonfig: empty parser %s", typ)
+		order := make([]ParserType, 0, len(svc.groups)+4)
+
+		if !config.SkipDefaults { // set defaults
+			order = append(order, ParserDefaults)
+		}
+
+		if !config.SkipEnv { // set envs
+			order = append(order, ParserEnv)
+		}
+
+		if !config.SkipFlags { // set config flag
+			order = append(order, ParserConfigSet)
+		}
+
+		order = append(order, svc.orders...)
+
+		if !config.SkipFlags { // set flags
+			order = append(order, ParserFlags)
+		}
+
+		for _, typ := range order {
+			if setter, ok := svc.groups[typ].(ParserConfigSetter); ok {
+				setter.SetConfigPath(svc.config)
 			}
 
 			if err := svc.groups[typ].Load(v); err != nil {
-				return err
+				return fmt.Errorf("gonfig: could not load: %w", err)
 			}
 		}
 

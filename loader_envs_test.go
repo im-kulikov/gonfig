@@ -183,3 +183,19 @@ func TestEnvPrimitives(t *testing.T) {
 		})
 	}
 }
+
+func Test_setMultipleFields(t *testing.T) {
+	var example struct {
+		FieldOne string `env:"SOME_FIELD"`
+		FieldTwo string `env:"SOME_FIELD"`
+		Nested   struct {
+			FieldThree string `env:"SOME_FIELD"`
+		} `env:",squash"`
+	}
+
+	envs := gonfig.PrepareEnvs([]string{"SOME_FIELD=value"}, "")
+	require.NoError(t, gonfig.LoadEnvs(envs, &example))
+	require.Equal(t, "value", example.FieldOne)
+	require.Equal(t, "value", example.FieldTwo)
+	require.Equal(t, "value", example.Nested.FieldThree)
+}

@@ -19,15 +19,20 @@ import (
 type TestInnerLoaderConfig struct {
 	CustomField int    `custom:"custom-field"`
 	JSONField   string `json:"json-field" default:"default_value"`
+	IntField    int    `env:"INT_VALUE"`
 }
 
 type TestLoaderConfig struct {
 	StringField string        `default:"default_value" flag:"string-field"`
-	IntField    int           `env:"INT_VALUE" flag:"int-value"`
-	JSONConfig  string        `flag:"json-config"`
-	Timeout     time.Duration `env:"TIMEOUT"`
+	IntField    int           `env:"INT_VALUE" flag:"int-value" usage:"int value"`
+	JSONConfig  string        `flag:"json-config,config:true"`
+	Timeout     time.Duration `env:"TIMEOUT" usage:"timeout value" default:"30s"`
 
-	TestInnerLoaderConfig `json:",inline"`
+	TestInnerLoaderConfig `json:",inline" env:",squash"`
+
+	Embed struct {
+		IntField int `env:"INT_FIELD" default:"1" usage:"int field"`
+	} `env:"EMBED"`
 }
 
 const (
@@ -40,27 +45,33 @@ func testCustomOptions() []gonfig.LoaderOption {
 		gonfig.WithCustomParser(nil),
 		gonfig.WithCustomExit(func(int) {}),
 		gonfig.WithCustomParser(gonfig.NewCustomParser(parserCustomType, customLoad)),
-		gonfig.WithCustomParserInit(newTestJSONParser),
+		gonfig.WithCustomParser(new(JSONParser)),
 	}
 }
 
-func newTestJSONParser(gonfig.Config) (gonfig.Parser, error) {
-	var filename string
+type JSONParser struct {
+	config string
+}
 
-	return gonfig.NewCustomParser(parserJSONType, func(v interface{}) error {
-		filename = v.(*TestLoaderConfig).JSONConfig
+func (p *JSONParser) SetConfigPath(path string) { p.config = path }
 
-		file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
+func (p *JSONParser) Type() gonfig.ParserType { return parserJSONType }
 
-		if err = json.NewDecoder(file).Decode(v); err != nil {
-			return fmt.Errorf("could not decode json-field: %w", err)
-		}
+func (p *JSONParser) Load(v any) error {
+	if p.config == "" {
+		return nil
+	}
 
-		return file.Close()
-	}), nil
+	file, err := os.OpenFile(p.config, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+
+	if err = json.NewDecoder(file).Decode(v); err != nil {
+		return fmt.Errorf("could not decode json-field: %w", err)
+	}
+
+	return file.Close()
 }
 
 func customLoad(dest interface{}) error {
@@ -96,12 +107,7 @@ func customLoad(dest interface{}) error {
 }
 
 func testLoaderOptions(args, envs []string) (gonfig.Config, gonfig.LoaderOption) {
-	return gonfig.Config{
-			Args: args,
-			Envs: envs,
-
-			LoaderOrder: []gonfig.ParserType{gonfig.ParserDefaults, gonfig.ParserEnv, gonfig.ParserFlags, parserJSONType, parserCustomType}},
-		gonfig.WithOptions(testCustomOptions)
+	return gonfig.Config{Args: args, Envs: envs, EnvPrefix: "TEST"}, gonfig.WithOptions(testCustomOptions)
 }
 
 func TestNew(t *testing.T) {
@@ -121,8 +127,8 @@ func TestNew(t *testing.T) {
 		"--json-config", file.Name()}
 
 	envs := []string{
-		"INT_VALUE=" + strconv.Itoa(math.MaxInt),
-		"TIMEOUT=15s"}
+		"TEST_INT_VALUE=" + strconv.Itoa(math.MaxInt),
+		"TEST_TIMEOUT=15s"}
 
 	var config TestLoaderConfig
 	require.NoError(t, gonfig.New(testLoaderOptions(args, envs)).Load(&config))
@@ -153,17 +159,46 @@ func TestUsage(t *testing.T) {
 	require.NoError(t, out.Close())
 
 	expectedOutput := `Usage of flags:
-      --int-value int         
+      --int-value int         int value
       --json-config string    
       --string-field string    (default "default_value")
 
 Environment variables:
-  - 'INT_VALUE' <int>
-  - 'TIMEOUT' <time.Duration>
+  - 'TEST_INT_VALUE' <int> — int value
+  - 'TEST_TIMEOUT' <time.Duration> — timeout value (default: 30s)
+  - 'TEST_EMBED_INT_FIELD' <int> — int field (default: 1)
 `
 
 	tmp, err := io.ReadAll(buf)
 	require.NoError(t, err)
 	require.NoError(t, buf.Close())
 	require.Equal(t, expectedOutput, string(tmp))
+}
+
+func TestLoader(t *testing.T) {
+	require.NoError(t, gonfig.New(gonfig.Config{}).Load(&struct{}{}))
+
+	require.NoError(t, gonfig.New(gonfig.Config{},
+		gonfig.WithOptions(func() []gonfig.LoaderOption {
+			return []gonfig.LoaderOption{
+				gonfig.WithOptions([]gonfig.LoaderOption{}),
+				gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
+					return nil, nil
+				}),
+			}
+		})).Load(&struct{}{}))
+
+	require.EqualError(t, gonfig.New(gonfig.Config{}, gonfig.WithOptions(nil)).Load(&struct{}{}),
+		"gonfig: could not init option: invalid options type: <nil>")
+
+	require.EqualError(t, gonfig.New(gonfig.Config{},
+		gonfig.WithOptions(func() []gonfig.LoaderOption {
+			return []gonfig.LoaderOption{
+				gonfig.WithOptions([]gonfig.LoaderOption{}),
+				gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
+					return nil, gonfig.ErrExpectStruct
+				}),
+			}
+		})).Load(&struct{}{}), "gonfig: could not init option: could not init options: expect struct field")
+
 }

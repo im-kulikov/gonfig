@@ -1,12 +1,26 @@
 package gonfig
 
 import (
-	"encoding"
+	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// ErrEnvSetterBreak is a predefined constant of type constantError
+// used to indicate an error or a condition where processing should stop.
+const ErrEnvSetterBreak = constantError("break")
+
+// defaultTagName defines the struct tag key used to specify default values for struct fields.
+// When parsing struct tags, this key indicates the default value to be used if no value is provided
+// (e.g., from an environment variable or configuration).
+//
+// Example usage: `default:"localhost"`
+// This would set the field to "localhost" if no other value is provided.
+const defaultTagName = "default"
 
 // newDefaultParser creates a new parser for handling default values.
 // It returns a Parser implementation that sets default values to struct fields
@@ -21,47 +35,79 @@ func newDefaultParser() Parser {
 // and custom unmarshalling for types implementing encoding.TextUnmarshaler.
 // Returns an error if the destination is not a pointer or if setting a default value fails.
 func SetDefaults(dest interface{}) error {
-	v := reflect.ValueOf(dest)
-	if v.Kind() != reflect.Ptr {
-		return fmt.Errorf("(defaults) dest must be a pointer, got %T", dest)
-	}
+	types := []reflect.Type{reflect.TypeOf(net.IPNet{})}
+	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanAddr: True(), AsField: types}) {
+		if err != nil {
+			return fmt.Errorf("(defaults) %w", err)
+		}
 
-	v = v.Elem()
-	t := v.Type()
-	if t.Kind() != reflect.Struct {
-		return fmt.Errorf("(defaults) expected struct type, got %T", dest)
-	}
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		value := t.Field(i).Tag.Get("default")
-		if !field.CanSet() {
+		value := elem.Field.Tag.Get(defaultTagName)
+		if err = tryCustomTypes(elem.Value, value); errors.Is(err, ErrEnvSetterBreak) {
 			continue
+		} else if err != nil {
+			return fmt.Errorf("(defaults) failed to set field %q: %w", elem.Field.Name, err)
 		}
 
-		if field.CanAddr() && value != "" {
-			elem := field.Addr().Interface()
-
-			if text, ok := elem.(encoding.TextUnmarshaler); ok {
-				return text.UnmarshalText([]byte(value))
-			}
-		}
-
-		if field.Kind() == reflect.Struct && field.CanAddr() {
-			elem := field.Addr().Interface()
-			if err := SetDefaults(elem); err != nil {
-				return fmt.Errorf("(defaults) failed to set field %q: %w", t.Field(i).Name, err)
-			}
-
-			continue
-		}
-
-		if err := setDefaultValue(field, value); err != nil {
-			return fmt.Errorf("(defaults) failed to set field %q: %w", t.Field(i).Name, err)
+		if err = setDefaultValue(elem.Value, value); err != nil {
+			return fmt.Errorf("(defaults) failed to set field %q: %w", elem.Field.Name, err)
 		}
 	}
 
 	return nil
+}
+
+// tryCustomTypes attempts to set the value of a reflect.Value field based on its type.
+// It handles specific types like time.Duration, net.IP, net.IPMask, and net.IPNet.
+// If the value is not empty and the field is not already set (IsZero), it processes the value.
+func tryCustomTypes(field reflect.Value, value interface{}) error {
+	// If the value is empty or the field already has a value, return early with no error.
+	if value == "" || !field.IsZero() {
+		return nil
+	}
+
+	// Switch on the underlying type of the field, and handle specific custom types.
+	switch field.Interface().(type) {
+	default:
+		// For unsupported types, return nil without any changes.
+		return nil
+	case time.Duration:
+		// If the field is time.Duration, parse the value as a duration string.
+		val, err := time.ParseDuration(value.(string))
+		if err != nil {
+			return err // Return error if parsing fails.
+		}
+		// Set the parsed duration to the field.
+		field.Set(reflect.ValueOf(val))
+	case net.IP:
+		// If the field is net.IP, attempt to parse the value as an IP address.
+		val := net.ParseIP(value.(string))
+		if val == nil && value.(string) != "" {
+			return fmt.Errorf("invalid IP address %q", value.(string)) // Return error for invalid IP.
+		}
+		// Set the parsed IP address to the field.
+		field.Set(reflect.ValueOf(val))
+	case net.IPMask:
+		// If the field is net.IPMask, trim the leading '/' from the CIDR mask string.
+		mask := strings.TrimPrefix(value.(string), "/")
+		// Convert the mask string to an integer (CIDR prefix length).
+		prefix, err := strconv.Atoi(mask)
+		if err != nil {
+			return err // Return error if conversion fails.
+		}
+		// Set the corresponding IP mask using net.CIDRMask with a 32-bit IPv4 mask.
+		field.Set(reflect.ValueOf(net.CIDRMask(prefix, 32)))
+	case net.IPNet:
+		// If the field is net.IPNet, parse the value as a CIDR notation string.
+		_, val, err := net.ParseCIDR(value.(string))
+		if err != nil {
+			return err // Return error if parsing fails.
+		}
+		// Set the parsed IP network (CIDR) to the field.
+		field.Set(reflect.ValueOf(*val))
+	}
+
+	// Return ErrEnvSetterBreak to indicate that the setter has finished processing.
+	return ErrEnvSetterBreak
 }
 
 // setDefaultValue parses and sets the default value to the provided struct field.
@@ -70,7 +116,7 @@ func SetDefaults(dest interface{}) error {
 // and for maps, by colons. Returns an error if parsing or setting the value fails.
 func setDefaultValue(field reflect.Value, value string) error {
 	var err error
-	if value == "" {
+	if value == "" || !field.IsZero() {
 		return nil
 	}
 

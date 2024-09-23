@@ -16,6 +16,15 @@ type Parser interface {
 	Type() ParserType
 }
 
+// ParserConfigSetter defines an interface for setting the configuration file path.
+// Implementing types are expected to provide a method to set the path where
+// the configuration file for the parser is located.
+type ParserConfigSetter interface {
+	// SetConfigPath sets the path to the configuration file.
+	// The path parameter is expected to be a valid file path as a string.
+	SetConfigPath(path string)
+}
+
 // parserFunc is a concrete implementation of the Parser interface.
 // It wraps a function that performs the actual loading of configuration data.
 // The `name` field stores the type of the parser, and the `call` field holds the function

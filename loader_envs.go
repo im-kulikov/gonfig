@@ -19,11 +19,32 @@ type envUsageOptions struct {
 	prefix string // Optional prefix to be added to environment variable names.
 }
 
-const (
-	envPairDelim = "=" // Delimiter used to separate environment variable names from their values.
-	envDelimiter = "_" // Delimiter used to separate parts of the environment variable name.
+// envUsage represents metadata about an environment variable, including its name, usage description, and type.
+// This struct is typically used to store and display information about environment variables in a user-friendly format.
+//
+// Fields:
+// - Usage: A description of how the environment variable is intended to be used.
+// - Name: The name of the environment variable.
+// - Type: The expected data type of the environment variable (e.g., string, int, bool).
+//
+// This struct is useful when documenting or parsing environment variables in an application.
+type envUsage struct {
+	Usage string
+	Name  string
+	Type  string
+}
 
-	envTag = "env"
+const (
+	envPairDelim = "=" // envPairDelim is the delimiter used to separate the environment variable name from its value.
+	// Example: "KEY=value"
+
+	envDelimiter = "_" // envDelimiter is the delimiter used to separate different parts of a composite environment variable name.
+	// It's typically used in multipart names where sections are separated by underscores.
+	// Example: "APP_CONFIG_PATH"
+
+	envTag = "env" // envTag defines the struct tag key used to specify environment variable names for struct fields.
+	// When parsing struct tags, this key indicates that a field should be populated from an environment variable.
+	// Example usage: `env:"DB_HOST"`
 )
 
 // newEnvLoader creates a new parser that loads configuration from environment variables.
@@ -52,7 +73,7 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 //
 // Parameters:
 //   - dest: A pointer to a struct that defines the expected environment variables.
-//     The struct's fields must use the "env" tag to define environment variable names
+//     The struct fields must use the "env" tag to define environment variable names
 //     and the "usage" tag to describe their purpose.
 //   - opts: Optional EnvUsageOption(s) to configure behavior, such as adding a prefix to environment variable names.
 //
@@ -63,11 +84,53 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 // generating usage information based on the tags. If a struct field is another struct, it recurses
 // into the nested fields.
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
-	val := reflect.ValueOf(dest)
+	output := make([]envUsage, 0)
+	exists := make(map[string]struct{})
+	for field, err := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True()}) {
+		if err != nil {
+			return ""
+		}
 
-	// Ensure that the input is a pointer to a struct.
-	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return ""
+		var name string
+		for parent := field; parent != nil; parent = parent.Owner {
+			env := parent.Field.Tag.Get("env")
+			if tmp := strings.Split(env, ","); len(tmp) > 0 {
+				env = tmp[0]
+			}
+
+			if env == "" {
+				continue
+			}
+
+			if name == "" {
+				name = env
+
+				continue
+			}
+
+			name = env + envDelimiter + name
+		}
+
+		if name == "" {
+			continue
+		}
+
+		if _, ok := exists[name]; ok {
+			continue
+		}
+
+		exists[name] = struct{}{}
+
+		var usage string
+		if usage = field.Field.Tag.Get(FlagTagUsage); usage != "" {
+			usage = " — " + usage
+		}
+
+		if tmp := field.Field.Tag.Get(defaultTagName); tmp != "" {
+			usage += fmt.Sprintf(" (default: %s)", tmp)
+		}
+
+		output = append(output, envUsage{Usage: usage, Name: name, Type: field.Value.Type().String()})
 	}
 
 	var options envUsageOptions
@@ -75,12 +138,17 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 		opt(&options)
 	}
 
-	var result string
-	if result = prepareEnvUsage(val.Elem(), options.prefix); result == "" {
-		return ""
+	var prefix string
+	if options.prefix != "" {
+		prefix = options.prefix + envDelimiter
 	}
 
-	return fmt.Sprintf("Environment variables:\n%s", result)
+	var out []string
+	for _, item := range output {
+		out = append(out, fmt.Sprintf("  - '%s%s' <%s>%s", prefix, item.Name, item.Type, item.Usage))
+	}
+
+	return fmt.Sprintf("Environment variables:\n%s", strings.Join(out, "\n"))
 }
 
 // wrapUsageLoader wraps the provided loader function to add additional functionality
@@ -124,55 +192,6 @@ func wrapUsageLoader(svc *loader, handler func(v any) error) func(v any) error {
 
 		return nil
 	}
-}
-
-// prepareEnvUsage recursively processes the fields of a struct to generate environment variable
-// usage information, including descriptions and default values (if provided).
-//
-// Parameters:
-//   - v: The reflect.Value representing the struct to process.
-//   - prefix: A string prefix to apply to environment variable names.
-//
-// Returns:
-//   - A string describing the environment variables for the given struct, including the name, type,
-//     and usage description for each variable.
-//
-// The function iterates through each field of the struct, checking for the "env" tag to determine the
-// environment variable name. It uses the "usage" tag to describe the variable's purpose, and adds any
-// default values if specified in the "default" tag. For nested structs, the function recurses to process
-// the fields of the embedded structure.
-func prepareEnvUsage(v reflect.Value, prefix string) string {
-	t := v.Type()
-	if prefix != "" {
-		prefix += envPairDelim
-	}
-
-	out := make([]string, 0, t.NumField())
-	for i := 0; i < v.NumField(); i++ {
-		var name string
-		if name = t.Field(i).Tag.Get(envTag); name == "" || name == "-" {
-			continue
-		}
-
-		var usage string
-		if usage = t.Field(i).Tag.Get(FlagTagUsage); usage != "" {
-			usage = " — " + usage
-		}
-
-		if defaults := t.Field(i).Tag.Get("default"); defaults != "" {
-			usage += fmt.Sprintf(" (default %s)", defaults)
-		}
-
-		if t.Field(i).Type.Kind() != reflect.Struct {
-			out = append(out, fmt.Sprintf("  - '%s' <%s>%s", prefix+name, t.Field(i).Type, usage))
-
-			continue
-		}
-
-		out = append(out, prepareEnvUsage(v.Field(i), prefix+name))
-	}
-
-	return strings.Join(out, "\n")
 }
 
 // PrepareEnvs prepares a map from the given environment variable slice.
@@ -280,9 +299,11 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 // object based on the "env" tag. It returns an error if decoding fails.
 func LoadEnvs(envs map[string]interface{}, dest any) error {
 	conf := &mapstructure.DecoderConfig{
-		Result:     dest,
-		TagName:    envTag,
-		DecodeHook: decodeEnv()}
+		Result:          dest,
+		TagName:         envTag,
+		Squash:          true,
+		SquashTagOption: "squash",
+		DecodeHook:      decodeEnv()}
 	if dec, err := mapstructure.NewDecoder(conf); err != nil {
 		return fmt.Errorf("could not prepare encoder: %w", err)
 	} else if err = dec.Decode(envs); err != nil {

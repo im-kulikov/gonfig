@@ -3,7 +3,6 @@ package gonfig
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 )
 
@@ -14,6 +13,16 @@ type ErrMissingField struct {
 	Type  string // Type of the field.
 	Path  string // Path is full path to the field in the nested structure.
 }
+
+// RequiredTag defines the struct tag key used to specify if a field is required.
+// When parsing struct tags, this key is used to indicate that a field must be provided
+// (e.g., from an environment variable, configuration, or command-line argument).
+//
+// If a field is tagged with `required:"true"`, it signifies that the field is mandatory.
+// Example usage: `required:"true"`
+//
+// This tag is commonly used for validation purposes to ensure necessary fields are populated.
+const RequiredTag = "required"
 
 // Error formats the ErrMissingField into a descriptive error message.
 func (e ErrMissingField) Error() string {
@@ -28,86 +37,47 @@ func (e ErrMissingField) Error() string {
 // It traverses the provided struct, including nested structs, to identify any missing required fields.
 // It returns detailed error messages for all missing fields.
 func ValidateRequiredFields(input any) error {
-	v := reflect.ValueOf(input)
-
-	// Ensure that the input is a pointer to a struct.
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
-		return errors.New("input must be a pointer to a struct")
-	}
-
 	var missingFields []ErrMissingField
-	// Start collecting missing required fields from the root level of the struct.
-	collectMissingFields(v.Elem(), "", &missingFields)
+	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: True()}) {
+		if err != nil {
+			return fmt.Errorf("(require) %w", err)
+		}
 
-	// If there are any missing fields, format them into a readable error message.
-	if len(missingFields) > 0 {
-		return formatMissingFieldsError(missingFields)
-	}
-
-	return nil
-}
-
-// collectMissingFields recursively inspects the provided struct value and collects information
-// about any missing required fields. It also handles nested structs.
-func collectMissingFields(v reflect.Value, parentPath string, missingFields *[]ErrMissingField) {
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
-		// Skip fields that are unexported (cannot be accessed).
-		if !field.CanInterface() {
+		options := ParseTagOptions(elem.Field.Tag)
+		if !options.FieldRequired || !elem.Value.IsZero() {
 			continue
 		}
 
-		// Recursively handle nested structs to check for missing required fields.
-		if field.Kind() == reflect.Struct {
-			collectMissingFields(field, buildFieldPath(fieldType, parentPath), missingFields)
+		var path string
+		for owner := elem; owner != nil; owner = owner.Owner {
+			if owner.Field.Name == "" {
+				continue
+			}
 
-			continue
+			if path == "" {
+				path = owner.Field.Name
+
+				continue
+			}
+
+			path = fmt.Sprintf("%s.%s", owner.Field.Name, path)
 		}
 
-		// Retrieve the "required" tag for the field.
-		requiredTag := fieldType.Tag.Get("required")
-		if requiredTag == "" || requiredTag == "false" || requiredTag == "-" {
-			continue
-		}
-
-		// Check if the field is zero value (not set).
-		if !field.IsZero() {
-			continue
-		}
-
-		// Append an error entry for the missing field.
-		*missingFields = append(*missingFields, ErrMissingField{
-			Field: fieldType.Name,
-			Type:  fieldType.Type.String(),
-			Path:  buildFieldPath(fieldType, parentPath),
+		missingFields = append(missingFields, ErrMissingField{
+			Field: elem.Field.Name,
+			Type:  elem.Field.Type.String(),
+			Path:  path,
 		})
 	}
-}
 
-// buildFieldPath constructs the full path to a field by combining the parent path with the field name.
-// If there is no parent path, it simply returns the field name.
-func buildFieldPath(fieldType reflect.StructField, parentPath string) string {
-	name := fieldType.Name
-
-	if parentPath != "" {
-		return fmt.Sprintf("%s.%s", parentPath, name)
+	if len(missingFields) == 0 {
+		return nil
 	}
 
-	return name
-}
-
-// formatMissingFieldsError creates a formatted error message listing all missing required fields.
-// Each missing field is described with its name, type, and path in the nested structure.
-func formatMissingFieldsError(missingFields []ErrMissingField) error {
-	var lines []string
-
-	lines = append(lines, "missing required fields:")
+	lines := []string{"missing required fields:"}
 	for _, e := range missingFields {
 		lines = append(lines, e.Error())
 	}
+
 	return errors.New(strings.Join(lines, "\n\t- "))
 }

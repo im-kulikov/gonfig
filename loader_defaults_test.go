@@ -2,11 +2,12 @@ package gonfig_test
 
 import (
 	"errors"
+	"net"
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 
 	"github.com/im-kulikov/gonfig"
@@ -26,7 +27,13 @@ type TestStruct struct {
 	SliceBytes      []byte         `default:"255"`
 	MapField        map[string]int `default:"key1:100,key2:200"`
 	PointerField    *int           `default:"99"`
-	StructField     NestedStruct
+
+	DurationField  time.Duration `default:"10s"`
+	NetIPNetField  net.IPNet     `default:"192.168.0.0/24"`
+	NetIPField     net.IP        `default:"192.168.20.100"`
+	NetIPMaskField net.IPMask    `default:"/30"`
+
+	StructField NestedStruct
 }
 
 // Nested struct for testing
@@ -46,11 +53,7 @@ func (c *custom) UnmarshalText(text []byte) error {
 // Test to validate default setting logic
 func TestSetDefaults(t *testing.T) {
 	dest := &TestStruct{}
-	err := gonfig.SetDefaults(dest)
-
-	if err != nil {
-		t.Fatalf("Error setting defaults: %v", err)
-	}
+	require.NoError(t, gonfig.SetDefaults(dest))
 
 	// Check each field
 	if dest.StringField != "defaultString" {
@@ -99,6 +102,22 @@ func TestSetDefaults(t *testing.T) {
 	if dest.PointerField == nil || *dest.PointerField != 99 {
 		t.Errorf("Expected PointerField to be 99, got %v", dest.PointerField)
 	}
+
+	if dest.DurationField != 10*time.Second {
+		t.Errorf("Expected DurationField to be 10s, got %v", dest.DurationField)
+	}
+
+	if dest.NetIPField.String() != "192.168.20.100" {
+		t.Errorf("Expected NetIPField to be 192.168.20.100, got %v", dest.NetIPField)
+	}
+
+	if one, size := dest.NetIPMaskField.Size(); one != 30 && size != 32 {
+		t.Errorf("Expected NetIPMaskField to be /30, got %v (%d/%d)", dest.NetIPMaskField, one, size)
+	}
+
+	if dest.NetIPNetField.String() != "192.168.0.0/24" {
+		t.Errorf("Expected NetIPNetField to be 192.168.0.0/24, got %v", dest.NetIPNetField)
+	}
 }
 
 // Additional test cases for error scenarios
@@ -130,7 +149,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			require.Error(t, err)
 
 			var out *strconv.NumError
-			require.True(t, errors.As(err, &out), spew.Sdump(err))
+			require.True(t, errors.As(err, &out), err)
 			require.EqualError(t, out.Err, "invalid syntax")
 		})
 	}
@@ -148,11 +167,70 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		require.ErrorContains(t, err, "array length exceeds 3 elements")
 	})
 
+	t.Run("duration", func(t *testing.T) {
+		kind := reflect.StructOf([]reflect.StructField{{
+			Name: "SomeField",
+			Type: reflect.TypeOf(time.Second),
+			Tag:  `default:"70invalid"`,
+		}})
+
+		example := reflect.New(kind).Interface()
+		err := gonfig.SetDefaults(example)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `unknown unit "invalid" in duration "70invalid"`)
+	})
+
+	t.Run("net-types", func(t *testing.T) {
+		t.Run("net.IPMask", func(t *testing.T) {
+			kind := reflect.StructOf([]reflect.StructField{{
+				Name: "SomeField",
+				Type: reflect.TypeOf(net.IPMask{}),
+				Tag:  `default:"invalid"`,
+			}})
+
+			example := reflect.New(kind).Interface()
+			err := gonfig.SetDefaults(example)
+			require.Error(t, err)
+			require.ErrorContains(t, err, `parsing "invalid": invalid syntax`)
+		})
+
+		t.Run("net.IP", func(t *testing.T) {
+			kind := reflect.StructOf([]reflect.StructField{{
+				Name: "SomeField",
+				Type: reflect.TypeOf(net.IP{}),
+				Tag:  `default:"invalid"`,
+			}})
+
+			example := reflect.New(kind).Interface()
+			err := gonfig.SetDefaults(example)
+			require.Error(t, err)
+			require.ErrorContains(t, err, `invalid IP address "invalid"`)
+		})
+
+		t.Run("net.IP", func(t *testing.T) {
+			kind := reflect.StructOf([]reflect.StructField{{
+				Name: "SomeField",
+				Type: reflect.TypeOf(net.IPNet{}),
+				Tag:  `default:"invalid"`,
+			}})
+
+			example := reflect.New(kind).Interface()
+			err := gonfig.SetDefaults(example)
+			require.Error(t, err)
+			require.ErrorContains(t, err, `invalid CIDR address: invalid`)
+		})
+	})
+
 	t.Run("unknown type", func(t *testing.T) {
 		var out struct {
 			Field any `default:"1:100,2:200,3"`
 		}
 
 		require.ErrorContains(t, gonfig.SetDefaults(&out), "unsupported type")
+	})
+
+	t.Run("expect errors", func(t *testing.T) {
+		require.EqualError(t, gonfig.SetDefaults(struct{}{}), "(defaults) expect pointer, got \"struct\"")
+		require.EqualError(t, gonfig.SetDefaults(new(int)), "(defaults) expect struct field, got \"int\"")
 	})
 }
