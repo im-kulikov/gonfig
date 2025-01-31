@@ -48,7 +48,7 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 		}
 
 		options := ParseTagOptions(elem.Field.Tag)
-		if options.FlagFullName == "" {
+		if options.FlagFullName == "" || options.FieldIgnored {
 			continue
 		}
 

@@ -22,7 +22,7 @@ type TestFlagConfig struct {
 	Name       string        `flag:"name,short:n" usage:"service name"`
 	Tags       []string      `flag:"tags" usage:"list of tags"`
 	IP         net.IP        `flag:"ip" usage:"server IP"`
-	SkipDash   string        `flag:"-"`
+	SkipDash   string        `flag:"-,short:s"`
 	SkipEmpty  string
 	unexported string
 }
@@ -306,4 +306,8 @@ func TestPrepareFlags_Errors(t *testing.T) {
 			Field []byte `flag:"slice-byte,unknown"`
 		}
 	}{}))
+
+	require.NoError(t, gonfig.PrepareFlags(flagSet, &TestFlagConfig{}))
+	// error, because we ignore field
+	require.EqualError(t, flagSet.Parse([]string{"-s", "a/b/c/d/"}), "unknown shorthand flag: 's' in -s")
 }

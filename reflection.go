@@ -36,6 +36,7 @@ type ReflectOptions struct {
 // - FlagShortName: Specifies the short or abbreviated name of the flag.
 // - FlagConfig: Indicates whether the field should be loaded from a configuration file or environment variable.
 // - FieldRequired: Specifies if the field is mandatory and should not be left empty.
+// - FieldIgnored: Indicates whether the field should be ignored during flag processing and configuration loading.
 // - FieldUsage: Provides a description of the field’s purpose, typically used for generating usage/help information.
 // - tag: Internal representation of the field's struct tag, used for reflection operations.
 //
@@ -46,6 +47,7 @@ type TagOptions struct {
 	FlagShortName  string
 	FlagConfig     bool
 	FieldRequired  bool
+	FieldIgnored   bool
 	FieldUsage     string
 
 	tag reflect.StructTag
@@ -85,6 +87,7 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 
 	opt := TagOptions{
 		FlagFullName:  tmp[0],
+		FieldIgnored:  tmp[0] == "-",
 		FieldUsage:    tag.Get(FlagTagUsage),
 		FieldRequired: tag.Get(RequiredTag) == "true",
 		tag:           tag,
