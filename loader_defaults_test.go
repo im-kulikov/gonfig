@@ -204,7 +204,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			example := reflect.New(kind).Interface()
 			err := gonfig.SetDefaults(example)
 			require.Error(t, err)
-			require.ErrorContains(t, err, `invalid IP address "invalid"`)
+			require.ErrorContains(t, err, `invalid IP address`)
 		})
 
 		t.Run("net.IP", func(t *testing.T) {
@@ -227,6 +227,17 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		}
 
 		require.ErrorContains(t, gonfig.SetDefaults(&out), "unsupported type")
+	})
+
+	t.Run("encoding.TextUnmarshaler", func(t *testing.T) {
+		var out struct {
+			Field custom `default:"custom-text"`
+		}
+
+		expect := reflect.TypeOf(out).Field(0).Tag.Get("default")
+
+		require.NoError(t, gonfig.SetDefaults(&out))
+		require.Equal(t, expect, out.Field.inner)
 	})
 
 	t.Run("expect errors", func(t *testing.T) {

@@ -1,6 +1,7 @@
 package gonfig
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"net"
@@ -56,6 +57,24 @@ func SetDefaults(dest interface{}) error {
 	return nil
 }
 
+// getTextUnmarshaler checks if the field can be converted to encoding.TextUnmarshaler.
+// It first tries to get the addressable version of the field, and if that's not possible,
+// it attempts to assert the interface directly from the field's value.
+func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
+	if ca, ci := field.CanAddr(), field.CanInterface(); ca && ci {
+		if textUnmarshaler, ok := field.Addr().Interface().(encoding.TextUnmarshaler); ok {
+			return textUnmarshaler, true
+		}
+	} else if !ci {
+		return nil, false
+	}
+
+	textUnmarshaler, ok := field.Interface().(encoding.TextUnmarshaler)
+
+	return textUnmarshaler, ok
+
+}
+
 // tryCustomTypes attempts to set the value of a reflect.Value field based on its type.
 // It handles specific types like time.Duration, net.IP, net.IPMask, and net.IPNet.
 // If the value is not empty and the field is not already set (IsZero), it processes the value.
@@ -63,6 +82,10 @@ func tryCustomTypes(field reflect.Value, value interface{}) error {
 	// If the value is empty or the field already has a value, return early with no error.
 	if value == "" || !field.IsZero() {
 		return nil
+	}
+
+	if setter, ok := getTextUnmarshaler(field); ok {
+		return setter.UnmarshalText([]byte(value.(string)))
 	}
 
 	// Switch on the underlying type of the field, and handle specific custom types.
@@ -77,14 +100,6 @@ func tryCustomTypes(field reflect.Value, value interface{}) error {
 			return err // Return error if parsing fails.
 		}
 		// Set the parsed duration to the field.
-		field.Set(reflect.ValueOf(val))
-	case net.IP:
-		// If the field is net.IP, attempt to parse the value as an IP address.
-		val := net.ParseIP(value.(string))
-		if val == nil && value.(string) != "" {
-			return fmt.Errorf("invalid IP address %q", value.(string)) // Return error for invalid IP.
-		}
-		// Set the parsed IP address to the field.
 		field.Set(reflect.ValueOf(val))
 	case net.IPMask:
 		// If the field is net.IPMask, trim the leading '/' from the CIDR mask string.

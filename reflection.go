@@ -194,7 +194,9 @@ func (o *ReflectOptions) IsField(v reflect.Value) bool {
 
 	switch v.Kind() {
 	case reflect.Struct:
-		return false
+		_, ok := getTextUnmarshaler(v)
+
+		return ok
 	default:
 		return true
 	}
