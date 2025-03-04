@@ -81,9 +81,11 @@ type Config struct {
 
 func main() {
 	var cfg Config
-	if err := gonfig.Load(&cfg, gonfig.WithDefaults(gonfig.FlagTag, map[string]any{
-		"field": "some-custom-default-value",
-    })); err != nil {
+	if err := gonfig.Load(&cfg,
+		gonfig.WithYamlLoader(),
+		gonfig.WithDefaults(gonfig.FlagTag, map[string]any{
+            "field": "some-custom-default-value",
+        })); err != nil {
 		panic(err)
 	}
 

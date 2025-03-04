@@ -16,22 +16,25 @@ func TestNewYamlLoader(t *testing.T) {
 
 func TestYamlLoader_SetConfigPath(t *testing.T) {
 	parser := &yamlLoader{}
-	parser.SetConfigPath("config.yaml")
-	assert.Equal(t, "config.yaml", parser.path)
+	expect := "config.yaml"
+	parser.SetConfigPath(expect)
+
+	assert.EqualValues(t, &expect, parser.path.Load())
 }
 
 func TestYamlLoader_Load_EmptyPath(t *testing.T) {
-	parser := &yamlLoader{}
+	parser := NewYamlLoader()
+
 	var v any
-	err := parser.Load(&v)
-	assert.NoError(t, err)
+	assert.NoError(t, parser.Load(&v))
 }
 
 func TestYamlLoader_Load_CantOpenFile(t *testing.T) {
-	parser := &yamlLoader{path: "nonexistent.yaml"}
+	parser := NewYamlLoader().(*yamlLoader)
+	parser.SetConfigPath("nonexistent.yaml")
+
 	var v any
-	err := parser.Load(&v)
-	assert.ErrorIs(t, err, ErrYamlCantOpen)
+	assert.ErrorIs(t, parser.Load(&v), ErrYamlCantOpen)
 }
 
 func TestYamlLoader_Load_CantParse(t *testing.T) {
@@ -44,10 +47,11 @@ func TestYamlLoader_Load_CantParse(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	parser := &yamlLoader{path: file.Name()}
+	parser := NewYamlLoader().(*yamlLoader)
+	parser.SetConfigPath(file.Name())
+
 	var v any
-	err = parser.Load(&v)
-	assert.ErrorIs(t, err, ErrYamlCantParse)
+	assert.ErrorIs(t, parser.Load(&v), ErrYamlCantParse)
 }
 
 func TestYamlLoader_Load_Success(t *testing.T) {
@@ -58,15 +62,16 @@ func TestYamlLoader_Load_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	parser := &yamlLoader{path: file.Name()}
+	parser := NewYamlLoader().(*yamlLoader)
+	parser.SetConfigPath(file.Name())
+
 	var v map[string]string
-	err = parser.Load(&v)
-	assert.NoError(t, err)
+	assert.NoError(t, parser.Load(&v))
 	assert.Equal(t, "value", v["key"])
 }
 
 func TestYamlLoader_Type(t *testing.T) {
-	parser := &yamlLoader{}
+	parser := NewYamlLoader()
 	assert.Equal(t, ParserYAML, parser.Type())
 }
 
@@ -77,4 +82,9 @@ func TestConstantError(t *testing.T) {
 
 func TestParserTypeEquality(t *testing.T) {
 	assert.Equal(t, ParserType("yaml-loader"), ParserYAML)
+}
+
+func TestWithYamlLoader(t *testing.T) {
+	var v struct{}
+	require.NoError(t, Load(&v, WithYamlLoader()))
 }
