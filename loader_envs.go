@@ -3,7 +3,6 @@ package gonfig
 import (
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 
@@ -45,6 +44,9 @@ const (
 	envTag = "env" // envTag defines the struct tag key used to specify environment variable names for struct fields.
 	// When parsing struct tags, this key indicates that a field should be populated from an environment variable.
 	// Example usage: `env:"DB_HOST"`
+
+	// ErrTestExit fires in tests.
+	ErrTestExit = constantError("exit code")
 )
 
 // newEnvLoader creates a new parser that loads configuration from environment variables.
@@ -178,13 +180,8 @@ func wrapUsageLoader(svc *loader, handler func(v any) error) func(v any) error {
 			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(svc.EnvPrefix)))
 
 			// Handle program exit for tests or production
-			if svc.exit != nil {
-				svc.exit(0)
-				return nil // allows tests to proceed without terminating the program
-			}
-
-			// If no custom exit function is provided, exit the program
-			os.Exit(0)
+			svc.exit(0)
+			return ErrTestExit // allows tests to proceed without terminating the program
 		} else if err != nil {
 			// Return any other errors from the loader
 			return err
@@ -283,10 +280,10 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 					decoders, from, to)
 
 				if err != nil {
-					return f.Interface(), nil
+					return nil, err
 				}
 
-				tmp = reflect.Append(tmp, reflect.ValueOf(val))
+				tmp.Index(i).Set(reflect.ValueOf(val))
 			}
 
 			return tmp.Interface(), nil

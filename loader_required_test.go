@@ -1,12 +1,10 @@
-package gonfig_test
+package gonfig
 
 import (
 	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 // Example nested structures used for testing
@@ -126,7 +124,7 @@ func TestValidateRequiredFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := gonfig.ValidateRequiredFields(tc.input)
+			err := ValidateRequiredFields(tc.input)
 			if tc.wantErr {
 				require.Error(t, err)
 				require.Equal(t, tc.errMsg, err.Error())

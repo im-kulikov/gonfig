@@ -1,4 +1,4 @@
-package gonfig_test
+package gonfig
 
 import (
 	"encoding/base64"
@@ -11,8 +11,6 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 type TestFlagConfig struct {
@@ -83,7 +81,7 @@ func TestPrepareFlag_Primitives(t *testing.T) {
 			field := reflect.New(reflect.TypeOf(tt.item)).Elem()
 			field.Set(reflect.ValueOf(tt.item))
 			info := reflect.StructField{Name: tt.name, Tag: tt.tags}
-			opts := gonfig.ParseTagOptions(info.Tag)
+			opts := ParseTagOptions(info.Tag)
 
 			flagValue := fmt.Sprintf("%v", tt.item)
 			if str, ok := tt.item.(fmt.Stringer); ok {
@@ -93,7 +91,7 @@ func TestPrepareFlag_Primitives(t *testing.T) {
 			}
 
 			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-			require.NoError(t, gonfig.PrepareFlags(flags, example.Interface()), opts.FlagFullName)
+			require.NoError(t, PrepareFlags(flags, example.Interface()), opts.FlagFullName)
 
 			var args []string
 			if opts.FlagShortName != "" {
@@ -163,7 +161,7 @@ func TestPrepareFlag_Slices(t *testing.T) {
 			field := reflect.New(reflect.TypeOf(tt.item)).Elem()
 			field.Set(reflect.ValueOf(tt.item))
 			info := reflect.StructField{Name: tt.name, Tag: tt.tags}
-			opts := gonfig.ParseTagOptions(info.Tag)
+			opts := ParseTagOptions(info.Tag)
 
 			var args []string
 			{ // prepare args
@@ -185,7 +183,7 @@ func TestPrepareFlag_Slices(t *testing.T) {
 			}
 
 			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-			require.NoError(t, gonfig.PrepareFlags(flags, example.Interface()), opts.FlagFullName)
+			require.NoError(t, PrepareFlags(flags, example.Interface()), opts.FlagFullName)
 
 			field.SetZero()
 			require.NoError(t, flags.Parse(args), "args: %v", args)
@@ -195,8 +193,8 @@ func TestPrepareFlag_Slices(t *testing.T) {
 
 	t.Run("slice-bytes", func(t *testing.T) {
 		encoders := map[string]func([]byte) string{
-			gonfig.FlagHEX: hex.EncodeToString,
-			gonfig.FlagB64: base64.StdEncoding.EncodeToString,
+			FlagHEX: hex.EncodeToString,
+			FlagB64: base64.StdEncoding.EncodeToString,
 		}
 
 		for _, base := range []string{"base:hex", "base:b64"} {
@@ -216,7 +214,7 @@ func TestPrepareFlag_Slices(t *testing.T) {
 							Name: "slice-bytes",
 							Tag:  reflect.StructTag(`flag:"slice-bytes,` + base + short + `"`)}
 
-						opts := gonfig.ParseTagOptions(info.Tag)
+						opts := ParseTagOptions(info.Tag)
 						example := reflect.New(reflect.StructOf([]reflect.StructField{{
 							Name: testField,
 							Tag:  info.Tag,
@@ -233,7 +231,7 @@ func TestPrepareFlag_Slices(t *testing.T) {
 						t.Logf("run [%s][%s] => %v", flag, base, args)
 
 						flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-						require.NoError(t, gonfig.PrepareFlags(flags, example.Interface()), opts.FlagFullName)
+						require.NoError(t, PrepareFlags(flags, example.Interface()), opts.FlagFullName)
 
 						field.SetZero()
 						require.NoError(t, flags.Parse(args), "args: %v", args)
@@ -249,7 +247,7 @@ func TestPrepareFlags_Nested(t *testing.T) {
 	flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
 
 	config := NestedFlagConfig{}
-	require.NoError(t, gonfig.PrepareFlags(flagSet, &config))
+	require.NoError(t, PrepareFlags(flagSet, &config))
 
 	require.NoError(t, flagSet.Parse([]string{
 		"--debug",
@@ -280,34 +278,51 @@ func TestPrepareFlags_Errors(t *testing.T) {
 	flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
 
 	// wrong dest (not pointer)
-	require.Error(t, gonfig.PrepareFlags(flagSet, TestFlagConfig{}))
+	require.Error(t, PrepareFlags(flagSet, TestFlagConfig{}))
 
 	// wrong shorthand
-	require.Error(t, gonfig.PrepareFlags(flagSet, &struct {
+	require.Error(t, PrepareFlags(flagSet, &struct {
 		Field string `flag:"field,short:gg"`
 	}{}))
 
 	// wrong dest (not structure)
-	require.Error(t, gonfig.PrepareFlags(flagSet, new(int)))
+	require.Error(t, PrepareFlags(flagSet, new(int)))
 
 	// unknown type
-	require.Error(t, gonfig.PrepareFlags(flagSet, &struct {
+	require.Error(t, PrepareFlags(flagSet, &struct {
 		UnknownType []complex64 `flag:"complex"`
 	}{}))
 
 	// unknown []byte decoder
-	require.Error(t, gonfig.PrepareFlags(flagSet, &struct {
+	require.Error(t, PrepareFlags(flagSet, &struct {
 		UnknownType []byte `flag:"slice-byte,unknown"`
 	}{}))
 
 	// error in nested struct
-	require.Error(t, gonfig.PrepareFlags(flagSet, &struct {
+	require.Error(t, PrepareFlags(flagSet, &struct {
 		ErrorType struct {
 			Field []byte `flag:"slice-byte,unknown"`
 		}
 	}{}))
 
-	require.NoError(t, gonfig.PrepareFlags(flagSet, &TestFlagConfig{}))
+	require.NoError(t, PrepareFlags(flagSet, &TestFlagConfig{}))
 	// error, because we ignore field
 	require.EqualError(t, flagSet.Parse([]string{"-s", "a/b/c/d/"}), "unknown shorthand flag: 's' in -s")
+}
+
+func Test_parseConfigPathWithErrors(t *testing.T) {
+	var example struct {
+		Field string `flag:"config,config:true"`
+	}
+
+	t.Run("non-pointer", func(t *testing.T) {
+		err := parseConfigPath(&loader{}).Load(example)
+		require.ErrorContains(t, err, `expect pointer, got "struct"`)
+	})
+
+	t.Run("unknown-flags", func(t *testing.T) {
+		arg := []string{"--config"}
+		err := parseConfigPath(&loader{Config: Config{Args: arg}}).Load(&example)
+		require.ErrorContains(t, err, `flag needs an argument: --config`)
+	})
 }

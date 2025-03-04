@@ -1,4 +1,4 @@
-package gonfig_test
+package gonfig
 
 import (
 	"encoding/json"
@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 type NestedCustomLoaderConfig struct {
@@ -44,7 +42,7 @@ func (c *customJSONParser) Load(dest interface{}) error {
 	return json.NewDecoder(file).Decode(dest)
 }
 
-func (*customJSONParser) Type() gonfig.ParserType { return "json" }
+func (*customJSONParser) Type() ParserType { return "json" }
 
 func TestCustomLoaders(t *testing.T) {
 	args := []string{
@@ -70,8 +68,8 @@ func TestCustomLoaders(t *testing.T) {
 
 	var cfg CustomLoaderConfig
 
-	require.NoError(t, gonfig.New(gonfig.Config{Args: args},
-		gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
+	require.NoError(t, New(Config{Args: args},
+		WithCustomParserInit(func(Config) (Parser, error) {
 			return &customJSONParser{}, nil
 		})).Load(&cfg))
 
@@ -89,7 +87,7 @@ func TestCustomErrors(t *testing.T) {
 			Config int `flag:"config,short:c,config:true"`
 		}
 
-		require.EqualError(t, gonfig.New(gonfig.Config{Args: []string{
+		require.EqualError(t, New(Config{Args: []string{
 			"--config", "path/to/file"}}).Load(&cfg),
 			"gonfig: could not load: (config-path) expect string, got \"int\"")
 	}
@@ -99,7 +97,7 @@ func TestCustomErrors(t *testing.T) {
 			Field int `flag:"field,short:ff"`
 		}
 
-		require.EqualError(t, gonfig.New(gonfig.Config{Args: []string{
+		require.EqualError(t, New(Config{Args: []string{
 			"--config", "path/to/file"}}).Load(&cfg),
 			"gonfig: could not load: (flags) shorthand is more than one ASCII character \"ff\"")
 	}

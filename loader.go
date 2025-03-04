@@ -271,8 +271,27 @@ func WithOptions(options any) LoaderOption {
 	}
 }
 
+// WithCustomExit provides an option to override the default exit behavior of the loader.
+// This is useful for testing, where calling `os.Exit` would terminate the test process.
+//
+// By default, `loader.exit` is set to `os.Exit`, but this function allows replacing it
+// with a custom exit function (e.g., a no-op or mock function).
+//
+// Parameters:
+//   - exit: A custom function that takes an exit code as an argument. If nil, the default behavior remains unchanged.
+//
+// Returns:
+//   - A LoaderOption function that applies the custom exit behavior to the loader.
 func WithCustomExit(exit func(int)) LoaderOption {
-	return func(l *loader) error { l.exit = exit; return nil }
+	return func(l *loader) error {
+		if exit == nil {
+			return nil
+		}
+
+		l.exit = exit
+
+		return nil
+	}
 }
 
 // setLoaderDefaults initializes a loader with default values based on the provided configuration.
@@ -293,7 +312,7 @@ func WithCustomExit(exit func(int)) LoaderOption {
 // Returns:
 // - A pointer to a `loader` struct, which contains the updated Config and the map of available parsers.
 func setLoaderDefaults(c Config) *loader {
-	svc := &loader{Config: c, groups: make(map[ParserType]Parser, 4)}
+	svc := &loader{Config: c, exit: os.Exit, groups: make(map[ParserType]Parser, 4)}
 
 	if svc.Envs == nil {
 		svc.Envs = os.Environ()

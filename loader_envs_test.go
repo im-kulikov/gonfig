@@ -1,16 +1,15 @@
-package gonfig_test
+package gonfig
 
 import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 // Тестирование PrepareEnvs
@@ -47,7 +46,7 @@ func TestPrepareEnvs(t *testing.T) {
 		},
 	}
 
-	result := gonfig.PrepareEnvs(envs, "")
+	result := PrepareEnvs(envs, "")
 	require.Equal(t, expected, result)
 }
 
@@ -75,7 +74,7 @@ func TestLoadEnvs(t *testing.T) {
 	}
 
 	var config Config
-	err := gonfig.LoadEnvs(envs, &config)
+	err := LoadEnvs(envs, &config)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -107,7 +106,7 @@ func TestLoadEnvs_Error(t *testing.T) {
 	}
 
 	var config Config
-	require.Error(t, gonfig.LoadEnvs(invalidEnvs, &config))
+	require.Error(t, LoadEnvs(invalidEnvs, &config))
 }
 
 func TestLoadEnvs_custom(t *testing.T) {
@@ -117,18 +116,18 @@ func TestLoadEnvs_custom(t *testing.T) {
 		} `env:"SSH"`
 	}
 
-	envs := gonfig.PrepareEnvs([]string{
+	envs := PrepareEnvs([]string{
 		"APP_SSH_AUTH_SOCK=aaaa",
 		"ENV_WITH_UNKNOWN_PREFIX=bbb",
 	}, "APP")
 
-	require.NoError(t, gonfig.LoadEnvs(envs, &config))
+	require.NoError(t, LoadEnvs(envs, &config))
 	require.Equal(t, "aaaa", config.SSH.AuthSock)
 }
 
 func TestLoadEnvs_Errors(t *testing.T) {
 	// not pointer
-	require.Error(t, gonfig.LoadEnvs(nil, struct{}{}))
+	require.Error(t, LoadEnvs(nil, struct{}{}))
 }
 
 func anyToString(v any) string {
@@ -170,7 +169,7 @@ func TestEnvPrimitives(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(reflect.TypeOf(tt).String(), func(t *testing.T) {
 			require.NotPanics(t, func() {
-				envs := gonfig.PrepareEnvs([]string{"SOME_FIELD=" + anyToString(tt)}, "")
+				envs := PrepareEnvs([]string{"SOME_FIELD=" + anyToString(tt)}, "")
 
 				example := reflect.New(reflect.StructOf([]reflect.StructField{{
 					Name: "SOME_FIELD",
@@ -178,7 +177,7 @@ func TestEnvPrimitives(t *testing.T) {
 					Type: reflect.TypeOf(tt),
 				}}))
 
-				require.NoError(t, gonfig.LoadEnvs(envs, example.Interface()))
+				require.NoError(t, LoadEnvs(envs, example.Interface()))
 			})
 		})
 	}
@@ -193,9 +192,28 @@ func Test_setMultipleFields(t *testing.T) {
 		} `env:",squash"`
 	}
 
-	envs := gonfig.PrepareEnvs([]string{"SOME_FIELD=value"}, "")
-	require.NoError(t, gonfig.LoadEnvs(envs, &example))
+	envs := PrepareEnvs([]string{"SOME_FIELD=value"}, "")
+	require.NoError(t, LoadEnvs(envs, &example))
 	require.Equal(t, "value", example.FieldOne)
 	require.Equal(t, "value", example.FieldTwo)
 	require.Equal(t, "value", example.Nested.FieldThree)
+}
+
+func Test_tryToDecodeInvalidSlice(t *testing.T) {
+	var example struct {
+		FieldOne string `env:"SOME_FIELD"`
+		FieldTwo string `env:"SOME_FIELD"`
+		Nested   struct {
+			FieldThree []int `env:"SOME_FIELD"`
+		} `env:",squash"`
+	}
+
+	envs := PrepareEnvs([]string{"SOME_FIELD=1,2,3,b"}, "")
+	err := LoadEnvs(envs, &example)
+	require.ErrorIs(t, err, strconv.ErrSyntax)
+}
+
+func Test_EmptyForShowUsageOfEnvsWithErrors(t *testing.T) {
+	var example struct{}
+	require.Empty(t, UsageOfEnvs(example))
 }

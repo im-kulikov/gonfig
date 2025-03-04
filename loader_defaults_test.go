@@ -1,4 +1,4 @@
-package gonfig_test
+package gonfig
 
 import (
 	"errors"
@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 // Sample struct for testing
@@ -53,7 +51,7 @@ func (c *custom) UnmarshalText(text []byte) error {
 // Test to validate default setting logic
 func TestSetDefaults(t *testing.T) {
 	dest := &TestStruct{}
-	require.NoError(t, gonfig.SetDefaults(dest))
+	require.NoError(t, SetDefaults(dest))
 
 	// Check each field
 	if dest.StringField != "defaultString" {
@@ -145,7 +143,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			}})
 
 			example := reflect.New(kind).Interface()
-			err := gonfig.SetDefaults(example)
+			err := SetDefaults(example)
 			require.Error(t, err)
 
 			var out *strconv.NumError
@@ -162,7 +160,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		}})
 
 		example := reflect.New(kind).Interface()
-		err := gonfig.SetDefaults(example)
+		err := SetDefaults(example)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "array length exceeds 3 elements")
 	})
@@ -175,7 +173,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		}})
 
 		example := reflect.New(kind).Interface()
-		err := gonfig.SetDefaults(example)
+		err := SetDefaults(example)
 		require.Error(t, err)
 		require.ErrorContains(t, err, `unknown unit "invalid" in duration "70invalid"`)
 	})
@@ -189,7 +187,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			}})
 
 			example := reflect.New(kind).Interface()
-			err := gonfig.SetDefaults(example)
+			err := SetDefaults(example)
 			require.Error(t, err)
 			require.ErrorContains(t, err, `parsing "invalid": invalid syntax`)
 		})
@@ -202,7 +200,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			}})
 
 			example := reflect.New(kind).Interface()
-			err := gonfig.SetDefaults(example)
+			err := SetDefaults(example)
 			require.Error(t, err)
 			require.ErrorContains(t, err, `invalid IP address`)
 		})
@@ -215,7 +213,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			}})
 
 			example := reflect.New(kind).Interface()
-			err := gonfig.SetDefaults(example)
+			err := SetDefaults(example)
 			require.Error(t, err)
 			require.ErrorContains(t, err, `invalid CIDR address: invalid`)
 		})
@@ -226,7 +224,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			Field any `default:"1:100,2:200,3"`
 		}
 
-		require.ErrorContains(t, gonfig.SetDefaults(&out), "unsupported type")
+		require.ErrorContains(t, SetDefaults(&out), "unsupported type")
 	})
 
 	t.Run("encoding.TextUnmarshaler", func(t *testing.T) {
@@ -236,12 +234,12 @@ func TestSetDefaultValueErrors(t *testing.T) {
 
 		expect := reflect.TypeOf(out).Field(0).Tag.Get("default")
 
-		require.NoError(t, gonfig.SetDefaults(&out))
+		require.NoError(t, SetDefaults(&out))
 		require.Equal(t, expect, out.Field.inner)
 	})
 
 	t.Run("expect errors", func(t *testing.T) {
-		require.EqualError(t, gonfig.SetDefaults(struct{}{}), "(defaults) expect pointer, got \"struct\"")
-		require.EqualError(t, gonfig.SetDefaults(new(int)), "(defaults) expect struct field, got \"int\"")
+		require.EqualError(t, SetDefaults(struct{}{}), "(defaults) expect pointer, got \"struct\"")
+		require.EqualError(t, SetDefaults(new(int)), "(defaults) expect struct field, got \"int\"")
 	})
 }

@@ -1,4 +1,4 @@
-package gonfig_test
+package gonfig
 
 import (
 	"encoding/json"
@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/im-kulikov/gonfig"
 )
 
 type TestInnerLoaderConfig struct {
@@ -36,16 +34,16 @@ type TestLoaderConfig struct {
 }
 
 const (
-	parserJSONType   gonfig.ParserType = "json"
-	parserCustomType gonfig.ParserType = "custom"
+	parserJSONType   ParserType = "json"
+	parserCustomType ParserType = "custom"
 )
 
-func testCustomOptions() []gonfig.LoaderOption {
-	return []gonfig.LoaderOption{
-		gonfig.WithCustomParser(nil),
-		gonfig.WithCustomExit(func(int) {}),
-		gonfig.WithCustomParser(gonfig.NewCustomParser(parserCustomType, customLoad)),
-		gonfig.WithCustomParser(new(JSONParser)),
+func testCustomOptions() []LoaderOption {
+	return []LoaderOption{
+		WithCustomParser(nil),
+		WithCustomExit(func(int) {}),
+		WithCustomParser(NewCustomParser(parserCustomType, customLoad)),
+		WithCustomParser(new(JSONParser)),
 	}
 }
 
@@ -55,7 +53,7 @@ type JSONParser struct {
 
 func (p *JSONParser) SetConfigPath(path string) { p.config = path }
 
-func (p *JSONParser) Type() gonfig.ParserType { return parserJSONType }
+func (p *JSONParser) Type() ParserType { return parserJSONType }
 
 func (p *JSONParser) Load(v any) error {
 	if p.config == "" {
@@ -106,8 +104,8 @@ func customLoad(dest interface{}) error {
 	return nil
 }
 
-func testLoaderOptions(args, envs []string) (gonfig.Config, gonfig.LoaderOption) {
-	return gonfig.Config{Args: args, Envs: envs, EnvPrefix: "TEST"}, gonfig.WithOptions(testCustomOptions)
+func testLoaderOptions(args, envs []string) (Config, LoaderOption) {
+	return Config{Args: args, Envs: envs, EnvPrefix: "TEST"}, WithOptions(testCustomOptions)
 }
 
 func TestNew(t *testing.T) {
@@ -131,7 +129,7 @@ func TestNew(t *testing.T) {
 		"TEST_TIMEOUT=15s"}
 
 	var config TestLoaderConfig
-	require.NoError(t, gonfig.New(testLoaderOptions(args, envs)).Load(&config))
+	require.NoError(t, New(testLoaderOptions(args, envs)).Load(&config))
 
 	require.Equal(t, "custom-value", config.StringField, "string-field should be set")
 	require.Equal(t, "custom-value", config.JSONField, "json-field should be set")
@@ -154,7 +152,7 @@ func TestUsage(t *testing.T) {
 		envs []string
 		args = []string{"--help"}
 	)
-	require.NoError(t, gonfig.New(testLoaderOptions(args, envs)).Load(&conf))
+	require.Error(t, New(testLoaderOptions(args, envs)).Load(&conf), ErrTestExit.Error())
 
 	require.NoError(t, out.Close())
 
@@ -176,29 +174,35 @@ Environment variables:
 }
 
 func TestLoader(t *testing.T) {
-	require.NoError(t, gonfig.New(gonfig.Config{}).Load(&struct{}{}))
+	require.NoError(t, New(Config{}).Load(&struct{}{}))
 
-	require.NoError(t, gonfig.New(gonfig.Config{},
-		gonfig.WithOptions(func() []gonfig.LoaderOption {
-			return []gonfig.LoaderOption{
-				gonfig.WithOptions([]gonfig.LoaderOption{}),
-				gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
+	require.NoError(t, New(Config{},
+		WithOptions(func() []LoaderOption {
+			return []LoaderOption{
+				WithOptions([]LoaderOption{}),
+				WithCustomParserInit(func(Config) (Parser, error) {
 					return nil, nil
 				}),
 			}
 		})).Load(&struct{}{}))
 
-	require.EqualError(t, gonfig.New(gonfig.Config{}, gonfig.WithOptions(nil)).Load(&struct{}{}),
+	require.EqualError(t, New(Config{}, WithOptions(nil)).Load(&struct{}{}),
 		"gonfig: could not init option: invalid options type: <nil>")
 
-	require.EqualError(t, gonfig.New(gonfig.Config{},
-		gonfig.WithOptions(func() []gonfig.LoaderOption {
-			return []gonfig.LoaderOption{
-				gonfig.WithOptions([]gonfig.LoaderOption{}),
-				gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
-					return nil, gonfig.ErrExpectStruct
+	require.EqualError(t, New(Config{},
+		WithOptions(func() []LoaderOption {
+			return []LoaderOption{
+				WithOptions([]LoaderOption{}),
+				WithCustomParserInit(func(Config) (Parser, error) {
+					return nil, ErrExpectStruct
 				}),
 			}
 		})).Load(&struct{}{}), "gonfig: could not init option: could not init options: expect struct field")
 
+}
+
+func Test_emptyCustomExit(t *testing.T) {
+	l := loader{exit: os.Exit}
+	require.NoError(t, WithCustomExit(nil)(&l))
+	require.Equal(t, reflect.ValueOf(l.exit).Pointer(), reflect.ValueOf(os.Exit).Pointer())
 }
