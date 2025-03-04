@@ -16,7 +16,7 @@ import (
 
 type TestInnerLoaderConfig struct {
 	CustomField int    `custom:"custom-field"`
-	JSONField   string `json:"json-field" default:"default_value"`
+	JSONField   string `flag:"json-field" json:"json-field" default:"default_value"`
 	IntField    int    `env:"INT_VALUE"`
 }
 
@@ -159,6 +159,7 @@ func TestUsage(t *testing.T) {
 	expectedOutput := `Usage of flags:
       --int-value int         int value
       --json-config string    
+      --json-field string      (default "default_value")
       --string-field string    (default "default_value")
 
 Environment variables:
@@ -205,4 +206,30 @@ func Test_emptyCustomExit(t *testing.T) {
 	l := loader{exit: os.Exit}
 	require.NoError(t, WithCustomExit(nil)(&l))
 	require.Equal(t, reflect.ValueOf(l.exit).Pointer(), reflect.ValueOf(os.Exit).Pointer())
+}
+
+func TestLoad(t *testing.T) {
+	var example struct {
+		Field1 string `flag:"field-one" default:"default_value"`
+		Field2 string `flag:"field-two" default:"default_value"`
+
+		//TestLoaderConfig
+	}
+
+	err := Load(&example,
+		WithConfig(func(config *Config) {
+			config.Args = append(config.Args, "--field-one=flag_value")
+		}),
+		WithDefaults(FlagTag, map[string]any{
+			"field-one":    "custom_default_value_1",
+			"field-two":    "custom_default_value_2",
+			"string-field": "custom_string-field_string",
+			"json-field":   "custom_json-field_string",
+		}))
+
+	require.NoError(t, err)
+	require.Equal(t, "flag_value", example.Field1)
+	require.Equal(t, "custom_default_value_2", example.Field2)
+	//require.Equal(t, "custom_string-field_string", example.StringField)
+	//require.Equal(t, "custom_json-field_string", example.JSONField)
 }

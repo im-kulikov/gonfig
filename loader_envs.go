@@ -45,16 +45,29 @@ const (
 	// When parsing struct tags, this key indicates that a field should be populated from an environment variable.
 	// Example usage: `env:"DB_HOST"`
 
-	// ErrTestExit fires in tests.
+	// ErrTestExit is an error indicating that a test process should exit.
+	// This error can be used in testing scenarios where an explicit termination
+	// or exit condition needs to be simulated.
 	ErrTestExit = constantError("exit code")
+
+	// ErrPrepareDecoder is returned when the decoder initialization fails.
+	// This error typically occurs when setting up a configuration decoder
+	// encounters an issue, such as invalid decoder settings or unsupported types.
+	ErrPrepareDecoder = constantError("could not prepare decoder")
+
+	// ErrDecode is returned when decoding a configuration fails.
+	// This error indicates that the process of converting configuration data
+	// into the expected structure was unsuccessful, possibly due to type mismatches
+	// or missing required fields.
+	ErrDecode = constantError("could not decode")
 )
 
 // newEnvLoader creates a new parser that loads configuration from environment variables.
 // It uses the provided environment variable slice and prefix to populate the configuration.
 // Returns a Parser that processes environment variables with the specified prefix.
-func newEnvLoader(envs []string, prefix string) Parser {
+func newEnvLoader(l *loader) Parser {
 	return &parserFunc{name: ParserEnv, call: func(v interface{}) error {
-		return LoadEnvs(PrepareEnvs(envs, prefix), v)
+		return LoadEnvs(PrepareEnvs(l.Config.Envs, l.Config.EnvPrefix), v)
 	}}
 }
 
@@ -171,17 +184,19 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 //
 // Returns:
 // - A new function that wraps the original handler with additional error handling and help output logic.
-func wrapUsageLoader(svc *loader, handler func(v any) error) func(v any) error {
+func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 	return func(v any) error {
 		// Attempt to load the configuration
 		if err := handler(v); errors.Is(err, pflag.ErrHelp) {
 			// If the error is the help flag, print environment variable usage
 			fmt.Println()
-			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(svc.EnvPrefix)))
+			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(l.Config.EnvPrefix)))
 
 			// Handle program exit for tests or production
-			svc.exit(0)
-			return ErrTestExit // allows tests to proceed without terminating the program
+			l.exit(0)
+
+			// allows tests to proceed without terminating the program
+			return ErrTestExit
 		} else if err != nil {
 			// Return any other errors from the loader
 			return err
@@ -291,21 +306,25 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 
 }
 
-// LoadEnvs decodes the provided environment variables map into the destination object.
-// It uses mapstructure to map the environment variables to the fields of the destination
-// object based on the "env" tag. It returns an error if decoding fails.
-func LoadEnvs(envs map[string]interface{}, dest any) error {
+func decodeMapToStruct(dest any, from map[string]any, tag string) error {
 	conf := &mapstructure.DecoderConfig{
 		Result:          dest,
-		TagName:         envTag,
+		TagName:         tag,
 		Squash:          true,
 		SquashTagOption: "squash",
 		DecodeHook:      decodeEnv()}
 	if dec, err := mapstructure.NewDecoder(conf); err != nil {
-		return fmt.Errorf("could not prepare encoder: %w", err)
-	} else if err = dec.Decode(envs); err != nil {
-		return fmt.Errorf("could not decode: %w", err)
+		return errors.Join(ErrPrepareDecoder, err)
+	} else if err = dec.Decode(from); err != nil {
+		return errors.Join(ErrDecode, err)
 	}
 
 	return nil
+}
+
+// LoadEnvs decodes the provided environment variables map into the destination object.
+// It uses mapstructure to map the environment variables to the fields of the destination
+// object based on the "env" tag. It returns an error if decoding fails.
+func LoadEnvs(envs map[string]interface{}, dest any) error {
+	return decodeMapToStruct(dest, envs, envTag)
 }

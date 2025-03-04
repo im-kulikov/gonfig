@@ -16,6 +16,20 @@ type Parser interface {
 	Type() ParserType
 }
 
+// ParserPreparer is an interface for preparing a parser before parsing.
+// Implementations of this interface are expected to modify or adjust the provided
+// `Config` object before it is used in the parsing process. This can include tasks
+// such as setting default values, validating settings, or modifying parser behavior
+// based on the given configuration.
+//
+// This interface is useful when you need a preprocessing step before applying a parser.
+//
+// Method:
+// - Prepare(Config): Accepts a `Config` object and modifies it as needed before parsing.
+type ParserPreparer interface {
+	Prepare(Config)
+}
+
 // ParserConfigSetter defines an interface for setting the configuration file path.
 // Implementing types are expected to provide a method to set the path where
 // the configuration file for the parser is located.
@@ -31,7 +45,7 @@ type ParserConfigSetter interface {
 // responsible for loading the configuration into the destination object.
 type parserFunc struct {
 	name ParserType
-	call func(interface{}) error
+	call func(any) error
 }
 
 // ParserInit is a function type that allows initializing a Parser with the provided loader Config.
@@ -54,7 +68,7 @@ func (p *parserFunc) Load(dest interface{}) error {
 //
 // Parameters:
 //   - name: A ParserType value representing the name or type of the custom parser.
-//   - Loader: A function that takes an interface{} and returns an error. This function
+//   - Loader: A function that takes Config and an interface{} and returns an error. This function
 //     defines how the custom parser should load or parse the configuration data.
 //
 // Returns:
@@ -64,10 +78,10 @@ func (p *parserFunc) Load(dest interface{}) error {
 //
 // Example usage:
 //
-//	customParser := NewCustomParser("myCustomParser", func(cfg interface{}) error {
+//	customParser := NewCustomParser("myCustomParser", func(Config, any) error {
 //	    // Custom parsing logic here
 //	    return nil
 //	})
-func NewCustomParser(name ParserType, Loader func(interface{}) error) Parser {
+func NewCustomParser(name ParserType, Loader func(any) error) Parser {
 	return &parserFunc{name: name, call: Loader}
 }

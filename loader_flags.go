@@ -23,7 +23,7 @@ const (
 // newFlagsLoader creates a new parser that loads configuration from command-line flags.
 // It uses the provided arguments to populate the configuration by preparing and parsing the flags.
 // Returns a Parser that processes command-line flags.
-func newFlagsLoader(args []string) Parser {
+func newFlagsLoader(l *loader) Parser {
 	return &parserFunc{name: ParserFlags, call: func(val interface{}) error {
 		set := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
 		if err := PrepareFlags(set, val); err != nil {
@@ -32,7 +32,7 @@ func newFlagsLoader(args []string) Parser {
 
 		set.SetOutput(os.Stdout)
 
-		return set.Parse(args)
+		return set.Parse(l.Config.Args)
 	}}
 }
 
@@ -87,7 +87,7 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 //
 //	parser := parseConfigPath(loaderInstance)
 //	err := parser.Parse(configStruct)  // Parses the config path from the struct tags and command-line arguments.
-func parseConfigPath(svc *loader) Parser {
+func parseConfigPath(l *loader) Parser {
 	return &parserFunc{name: "config-path", call: func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -108,13 +108,13 @@ func parseConfigPath(svc *loader) Parser {
 			}
 
 			if opts.FlagShortName != "" && opts.FlagShortName != "-" {
-				flags.StringVarP(&svc.config, opts.FlagFullName, opts.FlagShortName, path, opts.FieldUsage)
+				flags.StringVarP(&l.config, opts.FlagFullName, opts.FlagShortName, path, opts.FieldUsage)
 			} else {
-				flags.StringVar(&svc.config, opts.FlagFullName, path, opts.FieldUsage)
+				flags.StringVar(&l.config, opts.FlagFullName, path, opts.FieldUsage)
 			}
 		}
 
-		if err := flags.Parse(svc.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
+		if err := flags.Parse(l.Config.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
 			return fmt.Errorf("(config-path) could not parse flags: %w", err)
 		}
 

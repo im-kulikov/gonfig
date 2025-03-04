@@ -84,6 +84,7 @@ type Config struct {
 type loader struct {
 	Config
 
+	output any
 	config string
 	orders []ParserType
 	groups map[ParserType]Parser
@@ -178,7 +179,7 @@ func (e constantError) Error() string { return string(e) }
 //     group of parsers.
 //
 // Example usage:
-// If you have a custom parser that implements the `Parser` interface and you want to include it in the
+// If you have a custom parser that implements the `Parser` interface ands you want to include it in the
 // loader's configuration process, you can use this function to add it:
 //
 //	myParser := NewMyCustomParser() // Assume this returns a valid Parser
@@ -294,6 +295,53 @@ func WithCustomExit(exit func(int)) LoaderOption {
 	}
 }
 
+// WithConfig allows modifying the Config object using a custom handler function.
+// This LoaderOption provides a way to customize configuration settings dynamically
+// before the loading process begins.
+//
+// The provided handler function receives a pointer to the Config object, allowing
+// modifications to be applied as needed.
+//
+// Parameters:
+// - handler: A function that takes a *Config and applies custom modifications.
+//
+// Returns:
+// - A LoaderOption that applies the given handler to modify the loader's Config.
+func WithConfig(handler func(*Config)) LoaderOption {
+	return func(l *loader) error {
+		if handler != nil {
+			handler(&l.Config)
+		}
+
+		return nil
+	}
+}
+
+// WithDefaults sets default values for the loader's output structure.
+//
+// This function takes a tag-key and map of default values and applies them to the target structure
+// using `decodeMapToStruct`. It ensures that any unset fields in the structure receive
+// the specified default values before other parsing mechanisms (such as environment
+// variables or configuration files) are applied.
+//
+// This function is useful when:
+// - You want to provide fallback values for missing configurations.
+// - You need to ensure a structure is always initialized with meaningful defaults.
+//
+// For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}
+//
+// Parameters:
+// - keyTag:   allows to use struct-tag to find field names.
+// - defaults: A map where keys are field names (or tagged keys) and values are default values.
+//
+// Returns:
+// - A `LoaderOption` function that applies the default values to the loader's output.
+func WithDefaults(keyTag string, defaults map[string]any) LoaderOption {
+	return func(l *loader) error {
+		return decodeMapToStruct(l.output, defaults, keyTag)
+	}
+}
+
 // setLoaderDefaults initializes a loader with default values based on the provided configuration.
 // It sets up the environment variables, command-line arguments, and the order in which parsers
 // will be applied, ensuring defaults are in place if not explicitly provided in the Config.
@@ -312,30 +360,30 @@ func WithCustomExit(exit func(int)) LoaderOption {
 // Returns:
 // - A pointer to a `loader` struct, which contains the updated Config and the map of available parsers.
 func setLoaderDefaults(c Config) *loader {
-	svc := &loader{Config: c, exit: os.Exit, groups: make(map[ParserType]Parser, 4)}
+	l := &loader{Config: c, exit: os.Exit, groups: make(map[ParserType]Parser, 4)}
 
-	if svc.Envs == nil {
-		svc.Envs = os.Environ()
+	if l.Envs == nil {
+		l.Envs = os.Environ()
 	}
 
-	if svc.Args == nil {
-		svc.Args = os.Args[1:]
+	if l.Args == nil {
+		l.Args = os.Args[1:]
 	}
 
-	if !svc.SkipDefaults {
-		svc.groups[ParserDefaults] = newDefaultParser()
+	if !l.SkipDefaults {
+		l.groups[ParserDefaults] = newDefaultParser()
 	}
 
-	if !svc.SkipEnv {
-		svc.groups[ParserEnv] = newEnvLoader(svc.Envs, svc.EnvPrefix)
+	if !l.SkipEnv {
+		l.groups[ParserEnv] = newEnvLoader(l)
 	}
 
-	if !svc.SkipFlags {
-		svc.groups[ParserFlags] = newFlagsLoader(svc.Args)
-		svc.groups[ParserConfigSet] = parseConfigPath(svc)
+	if !l.SkipFlags {
+		l.groups[ParserFlags] = newFlagsLoader(l)
+		l.groups[ParserConfigSet] = parseConfigPath(l)
 	}
 
-	return svc
+	return l
 }
 
 // New creates a new Parser based on the provided configuration and optional LoaderOptions.
@@ -354,17 +402,19 @@ func setLoaderDefaults(c Config) *loader {
 // Returns:
 // - A Parser that can be used to load and parse values into the provided target structure.
 func New(config Config, options ...LoaderOption) Parser {
-	svc := setLoaderDefaults(config)
+	l := setLoaderDefaults(config)
 
 	// return group parser
-	return &parserFunc{call: wrapUsageLoader(svc, func(v interface{}) error {
+	return &parserFunc{call: wrapUsageLoader(l, func(v interface{}) error {
+		l.output = v
+
 		for _, option := range options {
-			if err := option(svc); err != nil {
+			if err := option(l); err != nil {
 				return fmt.Errorf("gonfig: could not init option: %w", err)
 			}
 		}
 
-		order := make([]ParserType, 0, len(svc.groups)+4)
+		order := make([]ParserType, 0, len(l.groups)+4)
 
 		if !config.SkipDefaults { // set defaults
 			order = append(order, ParserDefaults)
@@ -378,22 +428,37 @@ func New(config Config, options ...LoaderOption) Parser {
 			order = append(order, ParserConfigSet)
 		}
 
-		order = append(order, svc.orders...)
+		order = append(order, l.orders...)
 
 		if !config.SkipFlags { // set flags
 			order = append(order, ParserFlags)
 		}
 
 		for _, typ := range order {
-			if setter, ok := svc.groups[typ].(ParserConfigSetter); ok {
-				setter.SetConfigPath(svc.config)
+			if setter, ok := l.groups[typ].(ParserConfigSetter); ok {
+				setter.SetConfigPath(l.config)
 			}
 
-			if err := svc.groups[typ].Load(v); err != nil {
+			if err := l.groups[typ].Load(v); err != nil {
 				return fmt.Errorf("gonfig: could not load: %w", err)
 			}
 		}
 
 		return ValidateRequiredFields(v)
 	})}
+}
+
+// Load initializes a new Parser with default settings and applies optional LoaderOptions.
+// It then loads the provided target structure using the configured loader service.
+//
+// This function is a shorthand for creating a new Parser with default Config and calling Load on it.
+//
+// Parameters:
+// - v: The target structure where the configuration will be loaded.
+// - options: Optional LoaderOptions to customize the behavior of the parser.
+//
+// Returns:
+// - An error if the loading process fails, otherwise nil.
+func Load(v any, options ...LoaderOption) error {
+	return New(Config{}, options...).Load(v)
 }
