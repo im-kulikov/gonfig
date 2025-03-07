@@ -19,13 +19,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go }}
-
-    - name: Setup Golang caches
-      uses: actions/cache@v4
+    - name: Restore Golang caches
+      uses: actions/cache/restore@v4
       with:
         path: |
           ~/.cache/go-build
@@ -33,6 +28,19 @@ jobs:
         key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-golang-
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go }}
+
+    - name: Setup Golang caches
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
 
     - name: Test
       run: go test -v ./...
