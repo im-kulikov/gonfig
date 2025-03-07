@@ -4,7 +4,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,8 +39,6 @@ func TestYamlLoader_Load_CantOpenFile(t *testing.T) {
 func TestYamlLoader_Load_CantParse(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "invalid.yaml")
 	require.NoError(t, err)
-
-	spew.Dump(file.Name())
 
 	_, err = file.WriteString("invalid_yaml: [unclosed_sequence")
 	require.NoError(t, err)
