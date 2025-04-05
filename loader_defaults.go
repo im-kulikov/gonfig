@@ -205,7 +205,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 			elem := reflect.New(field.Type().Elem()).Elem()
 			if err = setDefaultValue(elem, item); err != nil {
-				return fmt.Errorf("could set default %q: %w", elem, err)
+				return fmt.Errorf("could not set default %q: %w", elem, err)
 			}
 
 			array.Index(i).Set(elem)
