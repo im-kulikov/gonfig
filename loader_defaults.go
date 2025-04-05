@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// ErrEnvSetterBreak is a predefined constant of type constantError
+// ErrEnvSetterBreak is a predefined constant of type Error
 // used to indicate an error or a condition where processing should stop.
-const ErrEnvSetterBreak = constantError("break")
+const ErrEnvSetterBreak = Error("break")
 
 // defaultTagName defines the struct tag key used to specify default values for struct fields.
 // When parsing struct tags, this key indicates the default value to be used if no value is provided
@@ -26,7 +26,7 @@ const defaultTagName = "default"
 // newDefaultParser creates a new parser for handling default values.
 // It returns a Parser implementation that sets default values to struct fields
 // based on the "default" struct tags.
-func newDefaultParser() Parser {
+func newDefaultParser() *parserFunc {
 	return &parserFunc{name: ParserDefaults, call: SetDefaults}
 }
 
@@ -35,7 +35,7 @@ func newDefaultParser() Parser {
 // the "default" tag. It supports setting values for basic types, slices, arrays, maps,
 // and custom unmarshalling for types implementing encoding.TextUnmarshaler.
 // Returns an error if the destination is not a pointer or if setting a default value fails.
-func SetDefaults(dest interface{}) error {
+func SetDefaults(dest any) error {
 	types := []reflect.Type{reflect.TypeOf(net.IPNet{})}
 	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanAddr: True(), AsField: types}) {
 		if err != nil {
@@ -72,13 +72,12 @@ func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
 	textUnmarshaler, ok := field.Interface().(encoding.TextUnmarshaler)
 
 	return textUnmarshaler, ok
-
 }
 
 // tryCustomTypes attempts to set the value of a reflect.Value field based on its type.
 // It handles specific types like time.Duration, net.IP, net.IPMask, and net.IPNet.
 // If the value is not empty and the field is not already set (IsZero), it processes the value.
-func tryCustomTypes(field reflect.Value, value interface{}) error {
+func tryCustomTypes(field reflect.Value, value any) error {
 	// If the value is empty or the field already has a value, return early with no error.
 	if value == "" || !field.IsZero() {
 		return nil
@@ -129,6 +128,8 @@ func tryCustomTypes(field reflect.Value, value interface{}) error {
 // It supports various types including strings, integers, floats, booleans, complex numbers,
 // slices, arrays, maps, and pointers. For complex types, the value is split by commas
 // and for maps, by colons. Returns an error if parsing or setting the value fails.
+//
+// nolint:gocognit,funlen
 func setDefaultValue(field reflect.Value, value string) error {
 	var err error
 	if value == "" || !field.IsZero() {
@@ -141,35 +142,35 @@ func setDefaultValue(field reflect.Value, value string) error {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		var v uint64
 		if v, err = strconv.ParseUint(value, 10, field.Type().Bits()); err != nil {
-			return err
+			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
 		field.SetUint(v)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		var v int64
 		if v, err = strconv.ParseInt(value, 10, field.Type().Bits()); err != nil {
-			return err
+			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
 		field.SetInt(v)
 	case reflect.Float32, reflect.Float64:
 		var v float64
 		if v, err = strconv.ParseFloat(value, field.Type().Bits()); err != nil {
-			return err
+			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
 		field.SetFloat(v)
 	case reflect.Bool:
 		var v bool
 		if v, err = strconv.ParseBool(value); err != nil {
-			return err
+			return fmt.Errorf("could not parse %q as a bool: %w", value, err)
 		}
 
 		field.SetBool(v)
 	case reflect.Complex64, reflect.Complex128:
 		var v complex128
 		if v, err = strconv.ParseComplex(value, field.Type().Bits()); err != nil {
-			return err
+			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
 		field.SetComplex(v)
@@ -183,7 +184,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 			elem := reflect.New(field.Type().Elem()).Elem()
 			if err = setDefaultValue(elem, item); err != nil {
-				return err
+				return fmt.Errorf("could not set default %q: %w", elem, err)
 			}
 
 			slice = reflect.Append(slice, elem)
@@ -204,7 +205,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 			elem := reflect.New(field.Type().Elem()).Elem()
 			if err = setDefaultValue(elem, item); err != nil {
-				return err
+				return fmt.Errorf("could not set default %q: %w", elem, err)
 			}
 
 			array.Index(i).Set(elem)
@@ -222,12 +223,12 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 			key := reflect.New(field.Type().Key()).Elem()
 			if err = setDefaultValue(key, pair[0]); err != nil {
-				return err
+				return fmt.Errorf("could not set default %q: %w", key, err)
 			}
 
 			val := reflect.New(field.Type().Elem()).Elem()
 			if err = setDefaultValue(val, pair[1]); err != nil {
-				return err
+				return fmt.Errorf("could not set default %q: %w", val, err)
 			}
 
 			maper.SetMapIndex(key, val)
@@ -237,7 +238,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 	case reflect.Ptr:
 		elem := reflect.New(field.Type().Elem())
 		if err = setDefaultValue(elem.Elem(), value); err != nil {
-			return err
+			return fmt.Errorf("could not set default %q: %w", elem, err)
 		}
 
 		field.Set(elem)

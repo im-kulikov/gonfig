@@ -22,7 +22,7 @@ type TestFlagConfig struct {
 	IP         net.IP        `flag:"ip" usage:"server IP"`
 	SkipDash   string        `flag:"-,short:s"`
 	SkipEmpty  string
-	unexported string
+	unexported string // nolint:unused
 }
 
 type NestedFlagConfig struct {
@@ -32,6 +32,7 @@ type NestedFlagConfig struct {
 
 const testField = "SomeField"
 
+// nolint:funlen
 func TestPrepareFlag_Primitives(t *testing.T) {
 	cases := []struct {
 		item any
@@ -64,8 +65,16 @@ func TestPrepareFlag_Primitives(t *testing.T) {
 		{name: "duration-short", item: time.Second * 15, tags: reflect.StructTag(`flag:"duration-short,short:s"`)},
 		{name: "ip", item: net.ParseIP("127.0.0.1"), tags: reflect.StructTag(`flag:"ip"`)},
 		{name: "ip-short", item: net.ParseIP("128.0.0.1"), tags: reflect.StructTag(`flag:"ip,short:s"`)},
-		{name: "ipnet", item: net.IPNet{IP: net.ParseIP("128.0.0.0"), Mask: net.CIDRMask(24, 32)}, tags: reflect.StructTag(`flag:"ipnet"`)},
-		{name: "ipnet-short", item: net.IPNet{IP: net.ParseIP("128.0.0.0"), Mask: net.CIDRMask(24, 32)}, tags: reflect.StructTag(`flag:"ipnet,short:s"`)},
+		{
+			name: "ipnet",
+			item: net.IPNet{IP: net.ParseIP("128.0.0.0"), Mask: net.CIDRMask(24, 32)},
+			tags: reflect.StructTag(`flag:"ipnet"`),
+		},
+		{
+			name: "ipnet-short",
+			item: net.IPNet{IP: net.ParseIP("128.0.0.0"), Mask: net.CIDRMask(24, 32)},
+			tags: reflect.StructTag(`flag:"ipnet,short:s"`),
+		},
 		{name: "ip-mask", item: net.CIDRMask(16, 32), tags: reflect.StructTag(`flag:"ip-mask"`)},
 		{name: "ip-mask-short", item: net.CIDRMask(16, 32), tags: reflect.StructTag(`flag:"ip-mask,short:s"`)},
 	}
@@ -116,6 +125,7 @@ func TestPrepareFlag_Primitives(t *testing.T) {
 	}
 }
 
+// nolint:gocognit,funlen
 func TestPrepareFlag_Slices(t *testing.T) {
 	ip1 := net.ParseIP("127.0.0.1")
 	ip2 := net.ParseIP("127.0.0.2")
@@ -131,7 +141,11 @@ func TestPrepareFlag_Slices(t *testing.T) {
 		tags reflect.StructTag
 	}{
 		{name: "slice-bool", item: []bool{true, false, true}, tags: reflect.StructTag(`flag:"slice-bool"`)},
-		{name: "slice-bool-short", item: []bool{true, false, true}, tags: reflect.StructTag(`flag:"slice-bool-short,short:s"`)},
+		{
+			name: "slice-bool-short",
+			item: []bool{true, false, true},
+			tags: reflect.StructTag(`flag:"slice-bool-short,short:s"`),
+		},
 		{name: "slice-string", item: []string{"foo", "bar"}, tags: reflect.StructTag(`flag:"slice-string"`)},
 		{name: "slice-string-short", item: []string{"bar", "foo"}, tags: reflect.StructTag(`flag:"slice-string,short:s"`)},
 		{name: "slice-int", item: []int{1, 2, 3}, tags: reflect.StructTag(`flag:"slice-int"`)},
@@ -141,13 +155,25 @@ func TestPrepareFlag_Slices(t *testing.T) {
 		{name: "slice-int64", item: []int64{5, 6, 7}, tags: reflect.StructTag(`flag:"slice-int64"`)},
 		{name: "slice-int64-short", item: []int64{5, 6, 7}, tags: reflect.StructTag(`flag:"slice-int64,short:s"`)},
 		{name: "slice-float32", item: []float32{5.1, 6.2, 7.3}, tags: reflect.StructTag(`flag:"slice-float32"`)},
-		{name: "slice-float32-short", item: []float32{5.2, 6.3, 7.4}, tags: reflect.StructTag(`flag:"slice-float32,short:s"`)},
+		{
+			name: "slice-float32-short",
+			item: []float32{5.2, 6.3, 7.4},
+			tags: reflect.StructTag(`flag:"slice-float32,short:s"`),
+		},
 		{name: "slice-float64", item: []float64{5.3123, 6.4123, 7.5123}, tags: reflect.StructTag(`flag:"slice-float64"`)},
-		{name: "slice-float64-short", item: []float64{5.51234, 6.612345, 7.7123456}, tags: reflect.StructTag(`flag:"slice-float64,short:s"`)},
+		{
+			name: "slice-float64-short",
+			item: []float64{5.51234, 6.612345, 7.7123456},
+			tags: reflect.StructTag(`flag:"slice-float64,short:s"`),
+		},
 		{name: "slice-ip", item: []net.IP{ip1, ip2, ip3}, tags: reflect.StructTag(`flag:"slice-ip"`)},
 		{name: "slice-ip-short", item: []net.IP{ip2, ip3, ip1}, tags: reflect.StructTag(`flag:"slice-ip,short:s"`)},
 		{name: "slice-duration", item: []time.Duration{sec1, sec3, sec2}, tags: reflect.StructTag(`flag:"slice-duration"`)},
-		{name: "slice-duration-short", item: []time.Duration{sec3, sec1, sec2}, tags: reflect.StructTag(`flag:"slice-duration,short:s"`)},
+		{
+			name: "slice-duration-short",
+			item: []time.Duration{sec3, sec1, sec2},
+			tags: reflect.StructTag(`flag:"slice-duration,short:s"`),
+		},
 	}
 
 	for _, tt := range cases {

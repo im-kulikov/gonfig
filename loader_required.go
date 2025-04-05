@@ -37,7 +37,7 @@ func (e ErrMissingField) Error() string {
 // It traverses the provided struct, including nested structs, to identify any missing required fields.
 // It returns detailed error messages for all missing fields.
 func ValidateRequiredFields(input any) error {
-	var missingFields []ErrMissingField
+	var missingFields []ErrMissingField // nolint:prealloc
 	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: True()}) {
 		if err != nil {
 			return fmt.Errorf("(require) %w", err)

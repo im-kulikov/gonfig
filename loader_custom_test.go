@@ -21,29 +21,6 @@ type CustomLoaderConfig struct {
 	StructField NestedCustomLoaderConfig `json:"struct-field"`
 }
 
-type customJSONParser struct {
-	path string
-}
-
-func (c *customJSONParser) SetConfigPath(path string) { c.path = path }
-
-func (c *customJSONParser) Load(dest interface{}) error {
-	if c.path == "" {
-		return nil
-	}
-
-	file, err := os.Open(c.path)
-	if err != nil {
-		return err
-	}
-
-	defer func() { _ = file.Close() }()
-
-	return json.NewDecoder(file).Decode(dest)
-}
-
-func (*customJSONParser) Type() ParserType { return "json" }
-
 func TestCustomLoaders(t *testing.T) {
 	args := []string{
 		"--string-field", "flag-value",
@@ -52,6 +29,7 @@ func TestCustomLoaders(t *testing.T) {
 
 	file, err := os.CreateTemp(t.TempDir(), "test.json")
 	require.NoError(t, err)
+
 	defer func() {
 		require.NoError(t, os.Remove(file.Name()))
 	}()
@@ -67,11 +45,7 @@ func TestCustomLoaders(t *testing.T) {
 	args = append(args, "--config", file.Name())
 
 	var cfg CustomLoaderConfig
-
-	require.NoError(t, New(Config{Args: args},
-		WithCustomParserInit(func(Config) (Parser, error) {
-			return &customJSONParser{}, nil
-		})).Load(&cfg))
+	require.NoError(t, New(Config{Args: args}, WithJSONLoader()).Load(&cfg))
 
 	require.Equal(t, CustomLoaderConfig{
 		FieldString: "flag-value",

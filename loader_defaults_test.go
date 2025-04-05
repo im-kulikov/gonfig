@@ -49,6 +49,7 @@ func (c *custom) UnmarshalText(text []byte) error {
 }
 
 // Test to validate default setting logic
+// nolint:funlen
 func TestSetDefaults(t *testing.T) {
 	dest := &TestStruct{}
 	require.NoError(t, SetDefaults(dest))
@@ -73,6 +74,7 @@ func TestSetDefaults(t *testing.T) {
 	if dest.UintField != 64 {
 		t.Errorf("Expected UintField to be 64, got %d", dest.UintField)
 	}
+
 	if dest.ComplexField64 != complex(64, 3) {
 		t.Errorf("Expected ComplexField to be (64+3i), got %v", dest.ComplexField64)
 	}
@@ -119,6 +121,8 @@ func TestSetDefaults(t *testing.T) {
 }
 
 // Additional test cases for error scenarios
+//
+// nolint:funlen
 func TestSetDefaultValueErrors(t *testing.T) {
 	cases := []any{
 		0, int8(2), int16(3), int32(4), int64(5),
@@ -135,7 +139,6 @@ func TestSetDefaultValueErrors(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(reflect.TypeOf(tt).String(), func(t *testing.T) {
-
 			kind := reflect.StructOf([]reflect.StructField{{
 				Name: "SomeField",
 				Type: reflect.TypeOf(tt),
@@ -148,6 +151,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 
 			var out *strconv.NumError
 			require.True(t, errors.As(err, &out), err)
+
 			require.EqualError(t, out.Err, "invalid syntax")
 		})
 	}

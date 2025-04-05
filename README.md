@@ -57,9 +57,9 @@ go get github.com/im-kulikov/gonfig
 - [x] Load environments
 - [x] Load flags
 - [x] Mark as required
-- [x] Load YAML
-- [ ] Load JSON (you can use custom loader)
-- [ ] Load TOML (you can use custom loader)
+- [x] Load YAML `WithYAMLLoader`
+- [x] Load JSON `WithJSONLoader`
+- [x] Load TOML `WithTOMLLoader`
 - [x] Other formats, you can write it using custom loader
 
 ## Examples
@@ -82,7 +82,7 @@ type Config struct {
 func main() {
 	var cfg Config
 	if err := gonfig.Load(&cfg,
-		gonfig.WithYamlLoader(),
+		gonfig.WithYAMLLoader(),
 		gonfig.WithDefaults(gonfig.FlagTag, map[string]any{
             "field": "some-custom-default-value",
         })); err != nil {
@@ -135,10 +135,60 @@ type Config struct {
 }
 
 func main() {
-	yamlLoader := gonfig.NewYamlLoader()
-	
 	var cfg Config
-	if err := gonfig.New(gonfig.Config{}, gonfig.WithCustomParser(yamlLoader)).Load(&cfg); err != nil {
+	if err := gonfig.New(gonfig.Config{}, gonfig.WithYAMLLoader()).Load(&cfg); err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Loaded config: %+v\n", cfg)
+}
+```
+
+### Use TOML loader
+
+```go
+package main
+
+import (
+	"fmt"
+	
+	"github.com/im-kulikov/gonfig"
+)
+
+type Config struct {
+	AppName string `toml:"app_name"`
+	Port    int    `toml:"port"`
+}
+
+func main() {
+	var cfg Config
+	if err := gonfig.New(gonfig.Config{}, gonfig.WithTOMLLoader()).Load(&cfg); err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Loaded config: %+v\n", cfg)
+}
+```
+
+### Use JSON loader
+
+```go
+package main
+
+import (
+	"fmt"
+	
+	"github.com/im-kulikov/gonfig"
+)
+
+type Config struct {
+	AppName string `json:"app_name"`
+	Port    int    `json:"port"`
+}
+
+func main() {
+	var cfg Config
+	if err := gonfig.New(gonfig.Config{}, gonfig.WithJSONLoader()).Load(&cfg); err != nil {
 		panic(err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,43 +34,20 @@ type TestLoaderConfig struct {
 	} `env:"EMBED"`
 }
 
-const (
-	parserJSONType   ParserType = "json"
-	parserCustomType ParserType = "custom"
-)
+const parserCustomType ParserType = "custom"
+
+func TestConstantError(t *testing.T) {
+	err := Error("test error")
+	assert.EqualError(t, err, "test error")
+}
 
 func testCustomOptions() []LoaderOption {
 	return []LoaderOption{
+		WithJSONLoader(),
 		WithCustomParser(nil),
 		WithCustomExit(func(int) {}),
 		WithCustomParser(NewCustomParser(parserCustomType, customLoad)),
-		WithCustomParser(new(JSONParser)),
 	}
-}
-
-type JSONParser struct {
-	config string
-}
-
-func (p *JSONParser) SetConfigPath(path string) { p.config = path }
-
-func (p *JSONParser) Type() ParserType { return parserJSONType }
-
-func (p *JSONParser) Load(v any) error {
-	if p.config == "" {
-		return nil
-	}
-
-	file, err := os.OpenFile(p.config, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-
-	if err = json.NewDecoder(file).Decode(v); err != nil {
-		return fmt.Errorf("could not decode json-field: %w", err)
-	}
-
-	return file.Close()
 }
 
 func customLoad(dest interface{}) error {
@@ -129,6 +107,7 @@ func TestNew(t *testing.T) {
 		"TEST_TIMEOUT=15s"}
 
 	var config TestLoaderConfig
+
 	require.NoError(t, New(testLoaderOptions(args, envs)).Load(&config))
 
 	require.Equal(t, "custom-value", config.StringField, "string-field should be set")
@@ -199,7 +178,6 @@ func TestLoader(t *testing.T) {
 				}),
 			}
 		})).Load(&struct{}{}), "gonfig: could not init option: could not init options: expect struct field")
-
 }
 
 func Test_emptyCustomExit(t *testing.T) {
@@ -213,7 +191,7 @@ func TestLoad(t *testing.T) {
 		Field1 string `flag:"field-one" default:"default_value"`
 		Field2 string `flag:"field-two" default:"default_value"`
 
-		//TestLoaderConfig
+		TestLoaderConfig
 	}
 
 	err := Load(&example,
@@ -230,6 +208,6 @@ func TestLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "flag_value", example.Field1)
 	require.Equal(t, "custom_default_value_2", example.Field2)
-	//require.Equal(t, "custom_string-field_string", example.StringField)
-	//require.Equal(t, "custom_json-field_string", example.JSONField)
+	require.Equal(t, "custom_string-field_string", example.StringField)
+	require.Equal(t, "custom_json-field_string", example.JSONField)
 }

@@ -56,10 +56,10 @@ type TagOptions struct {
 // Error constants for reflection-related operations.
 const (
 	// ErrExpectStruct is returned when a struct field is expected but the provided value is not a struct.
-	ErrExpectStruct = constantError("expect struct field")
+	ErrExpectStruct = Error("expect struct field")
 
 	// ErrExpectPointer is returned when a pointer is expected but the provided value is not a pointer.
-	ErrExpectPointer = constantError("expect pointer")
+	ErrExpectPointer = Error("expect pointer")
 )
 
 // ParseTagOptions parses a reflect.StructTag and extracts relevant options into a TagOptions struct.
