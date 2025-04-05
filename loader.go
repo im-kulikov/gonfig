@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-// constantError is a custom error type based on a string.
+// Error is a custom error type based on a string.
 // It represents an error that is constant and does not change at runtime.
-type constantError string
+type Error string
 
 // Config holds the configuration options for loading settings using various parsers such as defaults,
 // environment variables, and command-line flags.
@@ -161,9 +161,9 @@ const (
 	ParserConfigSet ParserType = "config-setter"
 )
 
-// Error implements the error interface for the constantError type.
-// It returns the error message as a string, which is the underlying value of the constantError.
-func (e constantError) Error() string { return string(e) }
+// Error implements the error interface for the Error type.
+// It returns the error message as a string, which is the underlying value of the Error.
+func (e Error) Error() string { return string(e) }
 
 // WithCustomParser creates a LoaderOption that adds a custom parser to the loader's group of parsers.
 // This function allows you to inject a parser into the loader, which will be used to handle a specific
@@ -328,7 +328,7 @@ func WithConfig(handler func(*Config)) LoaderOption {
 // - You want to provide fallback values for missing configurations.
 // - You need to ensure a structure is always initialized with meaningful defaults.
 //
-// For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}
+// For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}}
 //
 // Parameters:
 // - keyTag:   allows to use struct-tag to find field names.
@@ -401,6 +401,8 @@ func setLoaderDefaults(c Config) *loader {
 //
 // Returns:
 // - A Parser that can be used to load and parse values into the provided target structure.
+//
+// nolint:ireturn
 func New(config Config, options ...LoaderOption) Parser {
 	l := setLoaderDefaults(config)
 

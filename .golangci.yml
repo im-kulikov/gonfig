@@ -1,0 +1,32 @@
+# $schema: https://raw.githubusercontent.com/golangci/golangci-lint/refs/heads/main/jsonschema/golangci.next.jsonschema.json
+
+version: "2"
+linters:
+  default: standard
+  disable: []
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - ireturn
+    - lll
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - unconvert
+    - whitespace
+
+run:
+  relative-path-mode: gomod # cfg, wd, gomod, gitroot.
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

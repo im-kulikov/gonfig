@@ -13,17 +13,22 @@ import (
 )
 
 const (
-	FlagB64      = "b64"   // FlagB64 indicating base64 encoding for byte slices.
-	FlagHEX      = "hex"   // FlagHEX indicating hexadecimal encoding for byte slices.
-	FlagTag      = "flag"  // FlagTag is tag used to specify the flag name for a field.
-	FlagTagUsage = "usage" // FlagTagUsage is tag used to specify the usage description for a flag.
-	FlagSetName  = "flags" // FlagSetName is name of the flag set for the command-line interface.
+	// FlagB64 indicating base64 encoding for byte slices.
+	FlagB64 = "b64"
+	// FlagHEX indicating hexadecimal encoding for byte slices.
+	FlagHEX = "hex"
+	// FlagTag is tag used to specify the flag name for a field.
+	FlagTag = "flag"
+	// FlagTagUsage is tag used to specify the usage description for a flag.
+	FlagTagUsage = "usage"
+	// FlagSetName is name of the flag set for the command-line interface.
+	FlagSetName = "flags"
 )
 
 // newFlagsLoader creates a new parser that loads configuration from command-line flags.
 // It uses the provided arguments to populate the configuration by preparing and parsing the flags.
 // Returns a Parser that processes command-line flags.
-func newFlagsLoader(l *loader) Parser {
+func newFlagsLoader(l *loader) *parserFunc {
 	return &parserFunc{name: ParserFlags, call: func(val interface{}) error {
 		set := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
 		if err := PrepareFlags(set, val); err != nil {
@@ -32,7 +37,7 @@ func newFlagsLoader(l *loader) Parser {
 
 		set.SetOutput(os.Stdout)
 
-		return set.Parse(l.Config.Args)
+		return set.Parse(l.Args)
 	}}
 }
 
@@ -69,11 +74,14 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 // It uses the pflag library to handle command-line flags and extracts flag metadata from struct tags.
 //
 // Parameters:
-// - svc: A pointer to a loader struct that contains the arguments (`svc.Args`) and the config field (`svc.config`) to be populated.
+//   - svc: A pointer to a loader struct that contains the arguments (`svc.Args`)
+//     and the config field (`svc.config`) to be populated.
 //
 // The function performs the following operations:
-// 1. Reflects over the fields of the `val` argument using ReflectFieldsOf, filtering based on `ReflectOptions` (only settable fields are considered).
-// 2. For each field, it checks if the field is tagged with `FlagConfig`, indicating it should be configured from the command line.
+// 1. Reflects over the fields of the `val` argument using ReflectFieldsOf, filtering based on `ReflectOptions`
+// (only settable fields are considered).
+// 2. For each field, it checks if the field is tagged with `FlagConfig`, indicating it should be configured
+// from the command line.
 // 3. Ensures that only string fields are used for the configuration path, otherwise an error is returned.
 // 4. Uses pflag to define and parse the configuration flag based on full name and short name from the `TagOptions`.
 // 5. Parses the command-line arguments (`svc.Args`) to populate the `svc.config` field.
@@ -87,7 +95,7 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 //
 //	parser := parseConfigPath(loaderInstance)
 //	err := parser.Parse(configStruct)  // Parses the config path from the struct tags and command-line arguments.
-func parseConfigPath(l *loader) Parser {
+func parseConfigPath(l *loader) *parserFunc {
 	return &parserFunc{name: "config-path", call: func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -114,7 +122,7 @@ func parseConfigPath(l *loader) Parser {
 			}
 		}
 
-		if err := flags.Parse(l.Config.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
+		if err := flags.Parse(l.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
 			return fmt.Errorf("(config-path) could not parse flags: %w", err)
 		}
 
@@ -125,6 +133,8 @@ func parseConfigPath(l *loader) Parser {
 // prepareFlag sets up a flag in the given flag set based on the field's type and the provided struct field information.
 // It configures the flag with its name, short name, and usage description, and binds it to the field's value.
 // Returns an error if the flag setup fails.
+//
+// nolint:gocognit,gocyclo,funlen
 func prepareFlag(flagSet *pflag.FlagSet, field reflect.Value, info TagOptions) error {
 	switch val := field.Addr().Interface().(type) {
 	case *bool: // Handle boolean flags

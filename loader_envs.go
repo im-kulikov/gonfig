@@ -34,40 +34,42 @@ type envUsage struct {
 }
 
 const (
-	envPairDelim = "=" // envPairDelim is the delimiter used to separate the environment variable name from its value.
-	// Example: "KEY=value"
+	// envPairDelim is the delimiter used to separate the environment variable name from its value.  Example: "KEY=value".
+	envPairDelim = "="
 
-	envDelimiter = "_" // envDelimiter is the delimiter used to separate different parts of a composite environment variable name.
+	// envDelimiter is the delimiter used to separate different parts of a composite environment variable name.
 	// It's typically used in multipart names where sections are separated by underscores.
-	// Example: "APP_CONFIG_PATH"
+	// Example: "APP_CONFIG_PATH".
+	envDelimiter = "_"
 
-	envTag = "env" // envTag defines the struct tag key used to specify environment variable names for struct fields.
+	// envTag defines the struct tag key used to specify environment variable names for struct fields.
 	// When parsing struct tags, this key indicates that a field should be populated from an environment variable.
-	// Example usage: `env:"DB_HOST"`
+	// Example usage: `env:"DB_HOST"`.
+	envTag = "env"
 
 	// ErrTestExit is an error indicating that a test process should exit.
 	// This error can be used in testing scenarios where an explicit termination
 	// or exit condition needs to be simulated.
-	ErrTestExit = constantError("exit code")
+	ErrTestExit = Error("exit code")
 
 	// ErrPrepareDecoder is returned when the decoder initialization fails.
 	// This error typically occurs when setting up a configuration decoder
 	// encounters an issue, such as invalid decoder settings or unsupported types.
-	ErrPrepareDecoder = constantError("could not prepare decoder")
+	ErrPrepareDecoder = Error("could not prepare decoder")
 
 	// ErrDecode is returned when decoding a configuration fails.
 	// This error indicates that the process of converting configuration data
 	// into the expected structure was unsuccessful, possibly due to type mismatches
 	// or missing required fields.
-	ErrDecode = constantError("could not decode")
+	ErrDecode = Error("could not decode")
 )
 
 // newEnvLoader creates a new parser that loads configuration from environment variables.
 // It uses the provided environment variable slice and prefix to populate the configuration.
 // Returns a Parser that processes environment variables with the specified prefix.
-func newEnvLoader(l *loader) Parser {
-	return &parserFunc{name: ParserEnv, call: func(v interface{}) error {
-		return LoadEnvs(PrepareEnvs(l.Config.Envs, l.Config.EnvPrefix), v)
+func newEnvLoader(l *loader) *parserFunc {
+	return &parserFunc{name: ParserEnv, call: func(v any) error {
+		return LoadEnvs(PrepareEnvs(l.Envs, l.EnvPrefix), v)
 	}}
 }
 
@@ -98,6 +100,8 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 // The function ensures that the input is a pointer to a struct. It traverses the struct fields,
 // generating usage information based on the tags. If a struct field is another struct, it recurses
 // into the nested fields.
+//
+// nolint:funlen
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	output := make([]envUsage, 0)
 	exists := make(map[string]struct{})
@@ -158,7 +162,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 		prefix = options.prefix + envDelimiter
 	}
 
-	var out []string
+	out := make([]string, 0, len(output))
 	for _, item := range output {
 		out = append(out, fmt.Sprintf("  - '%s%s' <%s>%s", prefix, item.Name, item.Type, item.Usage))
 	}
@@ -190,7 +194,7 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 		if err := handler(v); errors.Is(err, pflag.ErrHelp) {
 			// If the error is the help flag, print environment variable usage
 			fmt.Println()
-			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(l.Config.EnvPrefix)))
+			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(l.EnvPrefix)))
 
 			// Handle program exit for tests or production
 			l.exit(0)
@@ -210,8 +214,8 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 // It filters and parses the environment variables based on the provided prefix.
 // The resulting map has a nested structure based on the environment variable names,
 // using the specified delimiter for nesting.
-func PrepareEnvs(envs []string, prefix string) map[string]interface{} {
-	out := make(map[string]interface{}, len(envs))
+func PrepareEnvs(envs []string, prefix string) map[string]any {
+	out := make(map[string]any, len(envs))
 	for _, env := range envs {
 		if prefix != "" && !strings.HasPrefix(env, prefix) {
 			continue
@@ -238,7 +242,7 @@ func PrepareEnvs(envs []string, prefix string) map[string]interface{} {
 // insertIntoMap inserts the value into the map with the specified keys.
 // The keys define the nesting level of the map. If the keys are exhausted, the value is set.
 // This function creates nested maps as needed to match the structure defined by the keys.
-func insertIntoMap(m map[string]interface{}, keys []string, value interface{}) {
+func insertIntoMap(m map[string]any, keys []string, value any) {
 	if len(keys) == 1 {
 		m[keys[0]] = value
 		return
@@ -248,10 +252,10 @@ func insertIntoMap(m map[string]interface{}, keys []string, value interface{}) {
 
 	// Create a nested map if it does not exist
 	if _, ok := m[keys[0]]; !ok {
-		m[keys[0]] = make(map[string]interface{})
+		m[keys[0]] = make(map[string]any)
 	}
 
-	if nestedMap, ok := m[keys[0]].(map[string]interface{}); ok {
+	if nestedMap, ok := m[keys[0]].(map[string]any); ok {
 		insertIntoMap(nestedMap, keys[1:], value)
 	}
 }
@@ -259,6 +263,8 @@ func insertIntoMap(m map[string]interface{}, keys []string, value interface{}) {
 // decodeEnv converts the provided data into the target type using type-specific parsing.
 // It supports basic types, time.Duration, and IP-related types. It returns the parsed value
 // or an error if the conversion fails.
+//
+// nolint:ireturn
 func decodeEnv() mapstructure.DecodeHookFunc {
 	decoders := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.StringToTimeDurationHookFunc(),
@@ -277,7 +283,7 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 		func(
 			f reflect.Value,
 			t reflect.Value,
-		) (interface{}, error) {
+		) (any, error) {
 			if f.Kind() != reflect.String {
 				return f.Interface(), nil
 			}
@@ -303,7 +309,6 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 
 			return tmp.Interface(), nil
 		})
-
 }
 
 func decodeMapToStruct(dest any, from map[string]any, tag string) error {
@@ -325,6 +330,6 @@ func decodeMapToStruct(dest any, from map[string]any, tag string) error {
 // LoadEnvs decodes the provided environment variables map into the destination object.
 // It uses mapstructure to map the environment variables to the fields of the destination
 // object based on the "env" tag. It returns an error if decoding fails.
-func LoadEnvs(envs map[string]interface{}, dest any) error {
+func LoadEnvs(envs map[string]any, dest any) error {
 	return decodeMapToStruct(dest, envs, envTag)
 }

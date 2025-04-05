@@ -8,7 +8,7 @@ type Parser interface {
 	// The parameter dest should be a pointer to the object where the configuration should be loaded.
 	// This method should handle the process of parsing and populating the destination object with configuration data.
 	// Returns an error if the loading process fails, allowing the caller to handle any issues that occur.
-	Load(dest interface{}) error
+	Load(dest any) error
 
 	// Type returns the type of the current Parser.
 	// This method allows you to determine which type of parser is currently being used.
@@ -60,7 +60,7 @@ func (p *parserFunc) Type() ParserType { return p.name }
 // Load invokes the function associated with the parser to load the configuration into the destination object.
 // It uses the function provided during parser initialization to perform the actual loading process.
 // This method adheres to the Parser interface and provides the mechanism to apply configuration settings to the object.
-func (p *parserFunc) Load(dest interface{}) error {
+func (p *parserFunc) Load(dest any) error {
 	return p.call(dest)
 }
 
@@ -68,7 +68,7 @@ func (p *parserFunc) Load(dest interface{}) error {
 //
 // Parameters:
 //   - name: A ParserType value representing the name or type of the custom parser.
-//   - Loader: A function that takes Config and an interface{} and returns an error. This function
+//   - Loader: A function that takes Config and an any and returns an error. This function
 //     defines how the custom parser should load or parse the configuration data.
 //
 // Returns:
@@ -82,6 +82,8 @@ func (p *parserFunc) Load(dest interface{}) error {
 //	    // Custom parsing logic here
 //	    return nil
 //	})
-func NewCustomParser(name ParserType, Loader func(any) error) Parser {
-	return &parserFunc{name: name, call: Loader}
+//
+// nolint:ireturn
+func NewCustomParser(name ParserType, loader func(any) error) Parser {
+	return &parserFunc{name: name, call: loader}
 }

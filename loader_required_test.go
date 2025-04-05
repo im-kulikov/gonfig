@@ -39,6 +39,8 @@ type NestedAnonymous struct {
 }
 
 // TestValidateRequiredFields tests ValidateRequiredFields function using various test cases.
+//
+// nolint:funlen
 func TestValidateRequiredFields(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -64,7 +66,11 @@ func TestValidateRequiredFields(t *testing.T) {
 			name:    "Missing required fields",
 			input:   &User{},
 			wantErr: true,
-			errMsg:  "missing required fields:\n\t- field `Name` <string> is required\n\t- field `Email` <string> is required\n\t- field `IP` <net.IP> is required\n\t- field `City` <string> in path `Address.City` is required\n\t- field `Country` <string> in path `Address.Country` is required",
+			errMsg: "missing required fields:\n\t" +
+				"- field `Name` <string> is required\n\t" +
+				"- field `Email` <string> is required\n\t- field `IP` <net.IP> is required\n\t" +
+				"- field `City` <string> in path `Address.City` is required\n\t" +
+				"- field `Country` <string> in path `Address.Country` is required",
 		},
 		{
 			name: "Missing nested structure required fields",

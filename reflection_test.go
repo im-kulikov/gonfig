@@ -11,7 +11,7 @@ import (
 type ReflectStruct struct {
 	StringField string `env:"string_field"`
 
-	unexportedField int
+	unexportedField int // nolint:unused
 	ExportedPointer *int
 
 	NestedReflectField struct {
@@ -20,13 +20,14 @@ type ReflectStruct struct {
 
 	EmbedReflect `env:"embed"`
 
-	unexportedStruct reflectNestedStruct
+	unexportedStruct reflectNestedStruct // nolint:unused
 }
 
 type EmbedReflect struct {
 	EmbedStringField string `env:"embed_string_field"`
 }
 
+// nolint:unused
 type reflectNestedStruct struct {
 	AnotherField int
 }
@@ -58,10 +59,8 @@ func TestReflectFieldsOf(t *testing.T) {
 
 		for i, tt := range cases {
 			t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-				var example ReflectStruct
-
 				var output []*ReflectValue
-				for elem, err := range ReflectFieldsOf(&example, tt.Options) {
+				for elem, err := range ReflectFieldsOf(&ReflectStruct{}, tt.Options) {
 					assert.NoError(t, err)
 
 					output = append(output, elem)
