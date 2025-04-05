@@ -223,12 +223,12 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 			key := reflect.New(field.Type().Key()).Elem()
 			if err = setDefaultValue(key, pair[0]); err != nil {
-				return fmt.Errorf("could set default %q: %w", key, err)
+				return fmt.Errorf("could not set default %q: %w", key, err)
 			}
 
 			val := reflect.New(field.Type().Elem()).Elem()
 			if err = setDefaultValue(val, pair[1]); err != nil {
-				return fmt.Errorf("could set default %q: %w", val, err)
+				return fmt.Errorf("could not set default %q: %w", val, err)
 			}
 
 			maper.SetMapIndex(key, val)
@@ -238,7 +238,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 	case reflect.Ptr:
 		elem := reflect.New(field.Type().Elem())
 		if err = setDefaultValue(elem.Elem(), value); err != nil {
-			return fmt.Errorf("could set default %q: %w", elem, err)
+			return fmt.Errorf("could not set default %q: %w", elem, err)
 		}
 
 		field.Set(elem)
