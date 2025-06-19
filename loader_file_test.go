@@ -6,8 +6,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func testFileLoader(t *testing.T, kind ParserType, options ...fileLoaderOption) *fileLoader {
@@ -137,4 +139,57 @@ func Test_shouldFailOnUnknownType(t *testing.T) {
 
 	var v any
 	assert.ErrorIs(t, parser.Load(&v), ErrUnknownFileTypeParser)
+}
+
+type fileConfig struct {
+	ConfigFile string `flag:"config,config:true,short:c"`
+
+	Field1 string `yaml:"field1"`
+	Field2 string `yaml:"field2"`
+
+	inlineStruct `yaml:",inline"`
+
+	Inner innerStruct `yaml:"inner"`
+}
+
+type inlineStruct struct {
+	Field3 string `yaml:"field3"`
+	Field4 string `yaml:"field4"`
+}
+
+type innerStruct struct {
+	Field5 string `yaml:"field5"`
+	Field6 string `yaml:"field6"`
+}
+
+const testConfigFileContent = `
+field1: "field_1_content"
+field2: "field_2_content"
+field3: "field_3_content"
+field4: "field_4_content"
+inner:
+  field5: "field_5_content"
+  field6: "field_6_content"
+`
+
+func TestFileConfig(t *testing.T) {
+	tmp, err := os.CreateTemp(t.TempDir(), "*.config.yml")
+	require.NoError(t, err)
+
+	spew.Dump(tmp.Name())
+
+	_, err = tmp.Write([]byte(testConfigFileContent))
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+
+	var cfg fileConfig
+	require.NoError(t, Load(&cfg, WithYAMLLoader(), WithConfig(func(c *Config) {
+		c.Args = append(c.Args, "--config", tmp.Name())
+	})))
+
+	var yml fileConfig
+	require.NoError(t, yaml.Unmarshal([]byte(testConfigFileContent), &yml))
+
+	yml.ConfigFile = tmp.Name()
+	require.Equal(t, yml, cfg)
 }

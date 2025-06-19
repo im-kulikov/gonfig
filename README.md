@@ -76,9 +76,11 @@ import (
 )
 
 type Config struct {
-	Field string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" require:"true"`
+	Config string `flag:"config,short:c,config:true"`
+	Field  string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" require:"true"`
 }
 
+// go run /path/to/main/folder --config /path/to/config.yml
 func main() {
 	var cfg Config
 	if err := gonfig.Load(&cfg,
@@ -130,13 +132,14 @@ import (
 )
 
 type Config struct {
-	AppName string `yaml:"app_name"`
+	Config  string `flag:"config,short:c,config:true"`
 	Port    int    `yaml:"port"`
 }
 
+// go run /path/to/main/folder --config /path/to/config.yml
 func main() {
 	var cfg Config
-	if err := gonfig.New(gonfig.Config{}, gonfig.WithYAMLLoader()).Load(&cfg); err != nil {
+	if err := gonfig.Load(&cfg, gonfig.WithYAMLLoader()); err != nil {
 		panic(err)
 	}
 
@@ -156,13 +159,14 @@ import (
 )
 
 type Config struct {
-	AppName string `toml:"app_name"`
+	Config  string `flag:"config,short:c,config:true"`
 	Port    int    `toml:"port"`
 }
 
+// go run /path/to/main/folder --config /path/to/config.toml
 func main() {
 	var cfg Config
-	if err := gonfig.New(gonfig.Config{}, gonfig.WithTOMLLoader()).Load(&cfg); err != nil {
+	if err := gonfig.Load(&cfg, gonfig.WithTOMLLoader()); err != nil {
 		panic(err)
 	}
 
@@ -182,13 +186,14 @@ import (
 )
 
 type Config struct {
-	AppName string `json:"app_name"`
+	Config  string `flag:"config,short:c,config:true"`
 	Port    int    `json:"port"`
 }
 
+// go run /path/to/main/folder --config /path/to/config.json
 func main() {
 	var cfg Config
-	if err := gonfig.New(gonfig.Config{}, gonfig.WithJSONLoader()).Load(&cfg); err != nil {
+	if err := gonfig.Load(&cfg, gonfig.WithJSONLoader()); err != nil {
 		panic(err)
 	}
 

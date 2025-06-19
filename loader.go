@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -27,7 +28,7 @@ type Error string
 //     default to using `os.Environ()`.
 //
 //   - Args: A slice of command-line arguments to be used for parsing. If left nil, the loader will
-//     default to using `os.Args`. This can be explicitly parsed by the user if required.
+//     default to using `os.Args`. The user can explicitly parse this if required.
 //
 // `loader` struct:
 // - Embeds `Config` to inherit its configuration options.
@@ -52,16 +53,16 @@ type Config struct {
 	EnvPrefix string // EnvPrefix for environment variables.
 
 	// Envs hold the environment variable from which envs will be parsed.
-	// By default, is nil and then os.Environ() will be used.
+	// By default, it is nil and then os.Environ() will be used.
 	Envs []string
 
 	// Args hold the command-line arguments from which flags will be parsed.
-	// By default, is nil and then os.Args will be used.
+	// By default, it is nil and then os.Args will be used.
 	// Unless loader.Flags() will be explicitly parsed by the user.
 	Args []string
 }
 
-// loader is responsible for managing the configuration loading process by coordinating different parsers.
+// Loader is responsible for managing the configuration loading process by coordinating different parsers.
 // It embeds the `Config` struct and contains a map of `Parser` implementations.
 //
 // Fields:
@@ -70,11 +71,11 @@ type Config struct {
 //     flags for skipping defaults, environment variables, or command-line flags, as well as any custom
 //     environment variables and arguments provided.
 //
-//   - groups: A map where the keys are `ParserType` values (such as "defaults", "env", and "flags"),
+//   - Groups: A map where the keys are `ParserType` values (such as "defaults", "env", and "flags"),
 //     and the values are `Parser` instances. This map allows the loader to invoke the correct parser
 //     based on the order specified in `LoaderOrder` from the `Config`.
 //
-// The `loader` is initialized with a set of defaults and custom options can be added through
+// The `loader` is initialized with a set of defaults, and custom options can be added through
 // `LoaderOption` functions. Each parser in the `groups` map is responsible for loading part of the
 // configuration from its respective source (e.g., defaults, environment variables, or flags).
 //
@@ -86,6 +87,7 @@ type loader struct {
 
 	output any
 	config string
+	buffer io.Writer
 	orders []ParserType
 	groups map[ParserType]Parser
 
@@ -157,7 +159,7 @@ const (
 	ParserEnv ParserType = "env"
 
 	// ParserConfigSet Represents the parser type that handles command-line flags. This parser
-	//   processes the command-line arguments passed to the program to set config path.
+	//   processes the command-line arguments passed to the program to set the config path.
 	ParserConfigSet ParserType = "config-setter"
 )
 
@@ -249,7 +251,7 @@ func WithCustomParserInit(fabric ParserInit) LoaderOption {
 //
 // Returns:
 //   - A `LoaderOption` that applies the resolved list of options to a given loader, or an error if the
-//     options type is invalid or if any option fails during application.
+//     `options` type is invalid or if any option fails during application.
 func WithOptions(options any) LoaderOption {
 	return func(l *loader) error {
 		var result []LoaderOption
@@ -266,6 +268,29 @@ func WithOptions(options any) LoaderOption {
 			if err := opt(l); err != nil {
 				return fmt.Errorf("could not init options: %w", err)
 			}
+		}
+
+		return nil
+	}
+}
+
+// WithCustomOutput sets a custom io.Writer as the loader's output destination.
+//
+// By default, the loader writes its output to os.Stdout. This LoaderOption allows
+// overriding the output destination by providing a custom writer (e.g., a buffer,
+// a file, or a mock implementation). Useful for testing or redirecting output in
+// specific environments.
+//
+// Parameters:
+//   - writer: An implementation of io.Writer (e.g., os.Stdout, bytes.Buffer).
+//     If nil, the default (os.Stdout) remains unchanged.
+//
+// Returns:
+// - A LoaderOption that applies the custom writer to the loader's output buffer.
+func WithCustomOutput(writer io.Writer) LoaderOption {
+	return func(l *loader) error {
+		if writer != nil {
+			l.buffer = writer
 		}
 
 		return nil
@@ -360,7 +385,7 @@ func WithDefaults(keyTag string, defaults map[string]any) LoaderOption {
 // Returns:
 // - A pointer to a `loader` struct, which contains the updated Config and the map of available parsers.
 func setLoaderDefaults(c Config) *loader {
-	l := &loader{Config: c, exit: os.Exit, groups: make(map[ParserType]Parser, 4)}
+	l := &loader{Config: c, exit: os.Exit, buffer: os.Stdout, groups: make(map[ParserType]Parser, 4)}
 
 	if l.Envs == nil {
 		l.Envs = os.Environ()
@@ -453,7 +478,7 @@ func New(config Config, options ...LoaderOption) Parser {
 // Load initializes a new Parser with default settings and applies optional LoaderOptions.
 // It then loads the provided target structure using the configured loader service.
 //
-// This function is a shorthand for creating a new Parser with default Config and calling Load on it.
+// This function is shorthand for creating a new Parser with default Config and calling Load on it.
 //
 // Parameters:
 // - v: The target structure where the configuration will be loaded.

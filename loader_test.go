@@ -1,9 +1,9 @@
 package gonfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"reflect"
@@ -41,13 +41,12 @@ func TestConstantError(t *testing.T) {
 	assert.EqualError(t, err, "test error")
 }
 
-func testCustomOptions() []LoaderOption {
-	return []LoaderOption{
+func testCustomOptions(options ...LoaderOption) []LoaderOption {
+	return append(options,
 		WithJSONLoader(),
 		WithCustomParser(nil),
 		WithCustomExit(func(int) {}),
-		WithCustomParser(NewCustomParser(parserCustomType, customLoad)),
-	}
+		WithCustomParser(NewCustomParser(parserCustomType, customLoad)))
 }
 
 func customLoad(dest interface{}) error {
@@ -82,8 +81,8 @@ func customLoad(dest interface{}) error {
 	return nil
 }
 
-func testLoaderOptions(args, envs []string) (Config, LoaderOption) {
-	return Config{Args: args, Envs: envs, EnvPrefix: "TEST"}, WithOptions(testCustomOptions)
+func testLoaderOptions(args, envs []string, options ...LoaderOption) (Config, LoaderOption) {
+	return Config{Args: args, Envs: envs, EnvPrefix: "TEST"}, WithOptions(testCustomOptions(options...))
 }
 
 func TestNew(t *testing.T) {
@@ -118,22 +117,14 @@ func TestNew(t *testing.T) {
 }
 
 func TestUsage(t *testing.T) {
-	buf, out, err := os.Pipe()
-	require.NoError(t, err)
-
-	old := os.Stdout
-	defer func() { os.Stdout = old }()
-
-	os.Stdout = out
+	var buf bytes.Buffer
 
 	var (
 		conf TestLoaderConfig
 		envs []string
 		args = []string{"--help"}
 	)
-	require.Error(t, New(testLoaderOptions(args, envs)).Load(&conf), ErrTestExit.Error())
-
-	require.NoError(t, out.Close())
+	require.Error(t, New(testLoaderOptions(args, envs, WithCustomOutput(&buf))).Load(&conf), ErrTestExit.Error())
 
 	expectedOutput := `Usage of flags:
       --int-value int         int value
@@ -147,10 +138,7 @@ Environment variables:
   - 'TEST_EMBED_INT_FIELD' <int> — int field (default: 1)
 `
 
-	tmp, err := io.ReadAll(buf)
-	require.NoError(t, err)
-	require.NoError(t, buf.Close())
-	require.Equal(t, expectedOutput, string(tmp))
+	require.Equal(t, expectedOutput, buf.String())
 }
 
 func TestLoader(t *testing.T) {
@@ -210,4 +198,49 @@ func TestLoad(t *testing.T) {
 	require.Equal(t, "custom_default_value_2", example.Field2)
 	require.Equal(t, "custom_string-field_string", example.StringField)
 	require.Equal(t, "custom_json-field_string", example.JSONField)
+}
+
+func Test_shouldSkip(t *testing.T) {
+	var example struct {
+		Field      string // should skip for envs
+		FieldOne   string `env:"FIELD_ONE"`
+		FieldTwo   string `env:"FIELD_TWO"`
+		FieldThree string `env:"-"` // should not be shown in output
+		Nested     struct {
+			FieldThree []int `env:"SOME_FIELD"`
+		} `env:",squash"`
+	}
+
+	var buf bytes.Buffer
+
+	require.ErrorIs(t, Load(&example,
+		WithCustomOutput(&buf),
+		WithCustomExit(func(code int) {
+			require.Equal(t, 0, code)
+		}), WithConfig(func(config *Config) {
+			config.Args = append(config.Args, "-h")
+			config.Envs = []string{
+				"FIELD_ONE=one",
+				"FIELD_TWO=two",
+				"SOME_FIELD=1,2,3",
+			}
+		})), ErrTestExit)
+
+	expectedOutput := `Usage of flags:
+
+Environment variables:
+  - 'FIELD_ONE' <string>
+  - 'FIELD_TWO' <string>
+  - 'SOME_FIELD' <[]int>
+`
+
+	require.Equal(t, expectedOutput, buf.String())
+
+	require.NoError(t, Load(&example, WithConfig(func(config *Config) {
+		config.Envs = []string{
+			"FIELD_ONE=one",
+			"FIELD_TWO=two",
+			"SOME_FIELD=1,2,3",
+		}
+	})))
 }

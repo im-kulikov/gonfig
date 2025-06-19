@@ -110,7 +110,9 @@ func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) 
 }
 
 // SetConfigPath sets the path to the JSON configuration file.
-func (y *fileLoader) SetConfigPath(path string) { y.path.Store(&path) }
+func (y *fileLoader) SetConfigPath(filename string) {
+	y.path.Store(&filename)
+}
 
 func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.Reader) error) error {
 	if filename := path.Load(); filename == nil || *filename == "" {

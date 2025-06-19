@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"reflect"
 	"time"
 
@@ -35,7 +34,7 @@ func newFlagsLoader(l *loader) *parserFunc {
 			return err
 		}
 
-		set.SetOutput(os.Stdout)
+		set.SetOutput(l.buffer)
 
 		return set.Parse(l.Args)
 	}}

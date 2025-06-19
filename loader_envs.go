@@ -3,6 +3,7 @@ package gonfig
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 
@@ -117,7 +118,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 				env = tmp[0]
 			}
 
-			if env == "" {
+			if env == "" || env == "-" {
 				continue
 			}
 
@@ -130,7 +131,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 			name = env + envDelimiter + name
 		}
 
-		if name == "" {
+		if name == "" || name == "-" {
 			continue
 		}
 
@@ -193,8 +194,8 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 		// Attempt to load the configuration
 		if err := handler(v); errors.Is(err, pflag.ErrHelp) {
 			// If the error is the help flag, print environment variable usage
-			fmt.Println()
-			fmt.Println(UsageOfEnvs(v, EnvUsageWithPrefix(l.EnvPrefix)))
+			writeln(l.buffer)
+			writeln(l.buffer, UsageOfEnvs(v, EnvUsageWithPrefix(l.EnvPrefix)))
 
 			// Handle program exit for tests or production
 			l.exit(0)
@@ -208,6 +209,10 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 
 		return nil
 	}
+}
+
+func writeln(out io.Writer, a ...interface{}) {
+	_, _ = fmt.Fprintln(out, a...)
 }
 
 // PrepareEnvs prepares a map from the given environment variable slice.
@@ -313,11 +318,12 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 
 func decodeMapToStruct(dest any, from map[string]any, tag string) error {
 	conf := &mapstructure.DecoderConfig{
-		Result:          dest,
-		TagName:         tag,
-		Squash:          true,
-		SquashTagOption: "squash",
-		DecodeHook:      decodeEnv()}
+		Result:               dest,
+		TagName:              tag,
+		Squash:               true,
+		SquashTagOption:      "squash",
+		IgnoreUntaggedFields: true,
+		DecodeHook:           decodeEnv()}
 	if dec, err := mapstructure.NewDecoder(conf); err != nil {
 		return errors.Join(ErrPrepareDecoder, err)
 	} else if err = dec.Decode(from); err != nil {
