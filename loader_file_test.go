@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -175,8 +174,6 @@ inner:
 func TestFileConfig(t *testing.T) {
 	tmp, err := os.CreateTemp(t.TempDir(), "*.config.yml")
 	require.NoError(t, err)
-
-	spew.Dump(tmp.Name())
 
 	_, err = tmp.Write([]byte(testConfigFileContent))
 	require.NoError(t, err)
