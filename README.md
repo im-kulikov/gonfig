@@ -237,3 +237,64 @@ func (c *CustomLoader) Type() gonfig.ParserType {
 	return "custom-loader"
 }
 ```
+
+## Custom validation
+
+Introduced in [Issue #3](https://github.com/im-kulikov/gonfig/issues/3)
+
+A new Go interface, `LoaderValidator`. Any struct that implements this interface will have its `Validate()` method called automatically by the loading mechanism.
+
+1.  **Define the interface:**
+    ```go
+    type LoaderValidator interface {
+        Validate() error
+    }
+    ```
+
+2.  **Integrated into the load process:** We modified the existing configuration loading function(s) to include a check for this interface. The execution flow should be:
+    *   Load the configuration (e.g., from YAML/JSON).
+    *   Run basic validation (e.g., the existing `ValidateRequiredFields`).
+    *   **Check if the loaded config struct implements `LoaderValidator`.**
+    *   If it does, call the `config.Validate()` method and return any error it produces.
+
+**A user can now easily add sophisticated validation to their config:**
+```go
+// User's configuration struct
+type AppConfig struct {
+    Port     int    `yaml:"port" required:"true"`
+    Username string `yaml:"username" required:"true"`
+    Email    string `yaml:"email"`
+}
+
+// Implement the LoaderValidator interface
+func (c *AppConfig) Validate() error {
+    // Custom validation 1: Check if port is in the valid range
+    if c.Port < 1024 || c.Port > 65535 {
+        return fmt.Errorf("port must be between 1024 and 65535, got %d", c.Port)
+    }
+
+    // Custom validation 2: Check email format if provided
+    if c.Email != "" {
+        if !isValidEmail(c.Email) {
+            return fmt.Errorf("invalid email format: %s", c.Email)
+        }
+    }
+    return nil
+}
+
+// Helper function (user-defined)
+func isValidEmail(email string) bool {
+    // ... simple regex check for example purposes
+    re := regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
+    return re.MatchString(email)
+}
+```
+
+With this implementation, when the user loads their `AppConfig`, the system will automatically check that `Port` 
+and `Username` are provided (basic validation) and *then* run the custom checks to ensure the port number is acceptable 
+and the email format is valid.
+
+*   **Backward Compatible:** This is a purely additive change. Existing code without the `Validate()` method will continue to work unchanged.
+*   **Clean and Idiomatic:** It follows Go's common pattern of using interfaces for extensibility (e.g., `Stringer`, `Error`).
+*   **Powerful and Flexible:** Users are no longer limited to just `required` checks and can implement any validation logic their application requires (cross-field validation, business logic, formatting, etc.).
+*   **Centralized Validation:** The validation logic lives alongside the data structure it validates, making the code more organized and maintainable.
