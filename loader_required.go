@@ -1,7 +1,6 @@
 package gonfig
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -11,7 +10,7 @@ import (
 type ErrMissingField struct {
 	Field string // Name of the field.
 	Type  string // Type of the field.
-	Path  string // Path is full path to the field in the nested structure.
+	Path  string // Path is a full path to the field in the nested structure.
 }
 
 // RequiredTag defines the struct tag key used to specify if a field is required.
@@ -21,8 +20,11 @@ type ErrMissingField struct {
 // If a field is tagged with `required:"true"`, it signifies that the field is mandatory.
 // Example usage: `required:"true"`
 //
-// This tag is commonly used for validation purposes to ensure necessary fields are populated.
+// This tag is commonly used for validation to ensure the necessary fields are populated.
 const RequiredTag = "required"
+
+// ErrMissingFields is an error returned when required fields are missing in input data.
+const ErrMissingFields Error = "missing required fields"
 
 // Error formats the ErrMissingField into a descriptive error message.
 func (e ErrMissingField) Error() string {
@@ -74,10 +76,10 @@ func ValidateRequiredFields(input any) error {
 		return nil
 	}
 
-	lines := []string{"missing required fields:"}
+	lines := make([]string, 0, len(missingFields))
 	for _, e := range missingFields {
-		lines = append(lines, e.Error())
+		lines = append(lines, fmt.Sprintf("\n\t- %s", e))
 	}
 
-	return errors.New(strings.Join(lines, "\n\t- "))
+	return fmt.Errorf("%w:%s", ErrMissingFields, strings.Join(lines, ""))
 }

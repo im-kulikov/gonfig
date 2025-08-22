@@ -46,7 +46,7 @@ type Error string
 // Example Usage:
 // Custom parsers can be injected using `LoaderOption` functions, such as `WithCustomParser`.
 type Config struct {
-	SkipDefaults bool // SkipDefaults set to true will not load config from 'default' tag.
+	SkipDefaults bool // SkipDefaults set to true will not load config from the 'default' tag.
 	SkipEnv      bool // SkipEnv set to true will not load config from environment variables.
 	SkipFlags    bool // SkipFlags set to true will not load config from flag parameters.
 
@@ -216,7 +216,7 @@ func WithCustomParser(p Parser) LoaderOption {
 //   - fabric: A `ParserInit` function that returns a custom `Parser` and an error based on the `Config`.
 //
 // Returns:
-//   - A `LoaderOption` that applies the custom parser to the loader's parser group, or returns an error if
+//   - A `LoaderOption` that applies the custom parser to the loader's parser group or returns an error if
 //     parser initialization fails.
 func WithCustomParserInit(fabric ParserInit) LoaderOption {
 	return func(l *loader) error {
@@ -238,7 +238,7 @@ func WithCustomParserInit(fabric ParserInit) LoaderOption {
 // or a function that returns a slice of LoaderOption. It ensures flexibility in configuring the loader.
 //
 // The function performs the following tasks:
-//   - Accepts `options` as an argument of type `any`, which can be either a `[]LoaderOption` or
+//   - Accepts `options` as an argument of a type `any`, which can be either a `[]LoaderOption` or
 //     a `func() []LoaderOption`.
 //   - Uses a type switch to determine the type of `options` and converts it into a `[]LoaderOption`.
 //   - Applies each LoaderOption to the provided loader (`l`) by iterating over the result.
@@ -356,7 +356,7 @@ func WithConfig(handler func(*Config)) LoaderOption {
 // For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}}
 //
 // Parameters:
-// - keyTag:   allows to use struct-tag to find field names.
+// - keyTag: allows to use struct-tag to find field names.
 // - defaults: A map where keys are field names (or tagged keys) and values are default values.
 //
 // Returns:
@@ -471,7 +471,15 @@ func New(config Config, options ...LoaderOption) Parser {
 			}
 		}
 
-		return ValidateRequiredFields(v)
+		if err := ValidateRequiredFields(v); err != nil {
+			return err
+		}
+
+		if validator, ok := v.(LoaderValidator); ok {
+			return validator.Validate()
+		}
+
+		return nil
 	})}
 }
 

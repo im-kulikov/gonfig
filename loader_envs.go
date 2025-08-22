@@ -237,7 +237,7 @@ func PrepareEnvs(envs []string, prefix string) map[string]any {
 
 		keys := strings.Split(parts[0], envDelimiter)
 
-		// Insert into map with the correct nesting
+		// Insert into a map with the correct nesting
 		insertIntoMap(out, keys, parts[1])
 	}
 

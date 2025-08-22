@@ -74,9 +74,9 @@ func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
 	return textUnmarshaler, ok
 }
 
-// tryCustomTypes attempts to set the value of a reflect.Value field based on its type.
+// tryCustomTypes attempts to set the value of a `reflect.Value` field based on its type.
 // It handles specific types like time.Duration, net.IP, net.IPMask, and net.IPNet.
-// If the value is not empty and the field is not already set (IsZero), it processes the value.
+// If the value is not empty and the field is not yet set (IsZero), it processes the value.
 func tryCustomTypes(field reflect.Value, value any) error {
 	// If the value is empty or the field already has a value, return early with no error.
 	if value == "" || !field.IsZero() {
@@ -87,7 +87,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		return setter.UnmarshalText([]byte(value.(string)))
 	}
 
-	// Switch on the underlying type of the field, and handle specific custom types.
+	// Switch on the underlying type of the field and handle specific custom types.
 	switch field.Interface().(type) {
 	default:
 		// For unsupported types, return nil without any changes.
@@ -106,7 +106,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		// Convert the mask string to an integer (CIDR prefix length).
 		prefix, err := strconv.Atoi(mask)
 		if err != nil {
-			return err // Return error if conversion fails.
+			return err // Return an error if conversion fails.
 		}
 		// Set the corresponding IP mask using net.CIDRMask with a 32-bit IPv4 mask.
 		field.Set(reflect.ValueOf(net.CIDRMask(prefix, 32)))

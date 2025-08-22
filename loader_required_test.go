@@ -38,6 +38,11 @@ type NestedAnonymous struct {
 	} `required:"true"`
 }
 
+func TestMissingFields(t *testing.T) {
+	var cfg User
+	require.ErrorIs(t, Load(&cfg), ErrMissingFields)
+}
+
 // TestValidateRequiredFields tests ValidateRequiredFields function using various test cases.
 //
 // nolint:funlen
