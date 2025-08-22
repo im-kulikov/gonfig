@@ -16,11 +16,11 @@ const (
 	FlagB64 = "b64"
 	// FlagHEX indicating hexadecimal encoding for byte slices.
 	FlagHEX = "hex"
-	// FlagTag is tag used to specify the flag name for a field.
+	// FlagTag is a tag used to specify the flag name for a field.
 	FlagTag = "flag"
-	// FlagTagUsage is tag used to specify the usage description for a flag.
+	// FlagTagUsage is a tag used to specify the usage description for a flag.
 	FlagTagUsage = "usage"
-	// FlagSetName is name of the flag set for the command-line interface.
+	// FlagSetName is a name of the flag set for the command-line interface.
 	FlagSetName = "flags"
 )
 
@@ -82,7 +82,7 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 // 2. For each field, it checks if the field is tagged with `FlagConfig`, indicating it should be configured
 // from the command line.
 // 3. Ensures that only string fields are used for the configuration path, otherwise an error is returned.
-// 4. Uses pflag to define and parse the configuration flag based on full name and short name from the `TagOptions`.
+// 4. Uses pflag to define and parse the configuration flag based on the full name and short name from the `TagOptions`.
 // 5. Parses the command-line arguments (`svc.Args`) to populate the `svc.config` field.
 //
 // If an error occurs during reflection or flag parsing, it returns a formatted error.
@@ -130,7 +130,7 @@ func parseConfigPath(l *loader) *parserFunc {
 }
 
 // prepareFlag sets up a flag in the given flag set based on the field's type and the provided struct field information.
-// It configures the flag with its name, short name, and usage description, and binds it to the field's value.
+// It configures the flag with its name, short name, and usage description and binds it to the field's value.
 // Returns an error if the flag setup fails.
 //
 // nolint:gocognit,gocyclo,funlen

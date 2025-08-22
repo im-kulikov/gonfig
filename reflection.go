@@ -9,7 +9,7 @@ import (
 )
 
 // ReflectValue represents a structure for working with a field of a struct in reflection.
-// It contains the reflect.Value of the field, its associated struct field metadata, and
+// It contains the `reflect.Value` of the field, its associated struct field metadata, and
 // a reference to its owner (the parent struct field, if applicable).
 type ReflectValue struct {
 	Value reflect.Value       // The reflected value of the field.
@@ -20,7 +20,7 @@ type ReflectValue struct {
 // ReflectOptions defines options for reflecting on fields of a struct.
 // These options specify conditions that determine which fields to include in the reflection process.
 type ReflectOptions struct {
-	CanAddr      *bool // Only include fields that can be addressed (pointer to the field can be taken).
+	CanAddr      *bool // Only include fields that can be addressed (a pointer to the field can be taken).
 	CanSet       *bool // Only include fields that can be set (modifiable).
 	CanInterface *bool // Only include fields that can be interfaced (exposed as an interface{}).
 
@@ -55,14 +55,14 @@ type TagOptions struct {
 
 // Error constants for reflection-related operations.
 const (
-	// ErrExpectStruct is returned when a struct field is expected but the provided value is not a struct.
+	// ErrExpectStruct is returned when a struct field is expected, but the provided value is not a struct.
 	ErrExpectStruct = Error("expect struct field")
 
-	// ErrExpectPointer is returned when a pointer is expected but the provided value is not a pointer.
+	// ErrExpectPointer is returned when a pointer is expected, but the provided value is not a pointer.
 	ErrExpectPointer = Error("expect pointer")
 )
 
-// ParseTagOptions parses a reflect.StructTag and extracts relevant options into a TagOptions struct.
+// ParseTagOptions parses a `reflect.StructTag` and extracts relevant options into a TagOptions struct.
 // It processes the tag string to identify various flag configurations such as the full name, short name,
 // encoding base, and whether the field is required or configurable via a config file.
 //
@@ -113,7 +113,7 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 }
 
 // Ptr takes a value of any comparable type and returns a pointer to that value.
-// This function is useful for quickly obtaining a pointer to a literal or value,
+// This function is useful for quickly getting a pointer to a literal or value,
 // especially in situations where you need a pointer for use in data structures or APIs.
 //
 // Example usage:
@@ -125,7 +125,7 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 func Ptr[E comparable](v E) *E { return &v }
 
 // True returns a pointer to a boolean value set to true.
-// It utilizes the Ptr function to quickly generate a pointer for the boolean literal true.
+// It uses the Ptr function to quickly generate a pointer for the boolean literal true.
 //
 // Example usage:
 //
@@ -140,7 +140,7 @@ func True() *bool { return Ptr(true) }
 //	b := False()  // Returns *bool pointing to false
 func False() *bool { return Ptr(false) }
 
-// IsValid checks whether a reflect.Value satisfies the conditions specified in the ReflectOptions.
+// IsValid checks whether a `reflect.Value` satisfies the conditions specified in the ReflectOptions.
 // It validates whether the value's CanSet, CanAddr, and CanInterface properties match the corresponding
 // constraints set in the ReflectOptions. If any constraint is not met, the method returns false.
 //
@@ -148,7 +148,7 @@ func False() *bool { return Ptr(false) }
 // - v: A `reflect.Value` representing the field or value to be validated.
 //
 // Returns:
-// - true if the reflect.Value meets all the conditions specified in the ReflectOptions.
+// - true if the `reflect.Value` meets all the conditions specified in the ReflectOptions.
 // - false otherwise.
 //
 // Example usage:
@@ -186,7 +186,7 @@ func (o *ReflectOptions) IsValid(v reflect.Value) bool {
 // Example usage:
 //
 //	options := ReflectOptions{AsField: []reflect.Type{reflect.TypeOf(int(0))}}
-//	isField := options.IsField(reflect.ValueOf(someField))  // returns true/false based on field type.
+//	isField := options.IsField(reflect.ValueOf(someField))  // returns true/false based on a field type.
 func (o *ReflectOptions) IsField(v reflect.Value) bool {
 	if slices.Contains(o.AsField, v.Type()) {
 		return true
@@ -225,7 +225,7 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 
 		structs := []*ReflectValue{{Value: v.Elem()}}
 
-	loop: // Start reflecting over the structs fields recursively.
+	loop: // Start reflecting over the struct fields recursively.
 		for j := 0; j < len(structs); j++ {
 			elem := structs[j]
 

@@ -16,6 +16,11 @@ type Parser interface {
 	Type() ParserType
 }
 
+// LoaderValidator defines an interface for validating loaders by implementing a Validate method.
+type LoaderValidator interface {
+	Validate() error
+}
+
 // ParserPreparer is an interface for preparing a parser before parsing.
 // Implementations of this interface are expected to modify or adjust the provided
 // `Config` object before it is used in the parsing process. This can include tasks

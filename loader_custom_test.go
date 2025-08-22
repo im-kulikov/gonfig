@@ -2,9 +2,11 @@ package gonfig
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,6 +21,39 @@ type CustomLoaderConfig struct {
 	FieldInt    int                      `json:"int-field" flag:"int-field" default:"-1"`
 	Config      string                   `json:"-" flag:"config,config:true,short:c"`
 	StructField NestedCustomLoaderConfig `json:"struct-field"`
+}
+
+type ConfigWithValidator struct {
+	mock.Mock
+
+	SomeField string `json:"some-field" env:"SOME_FIELD" required:"true"`
+}
+
+func (c *ConfigWithValidator) Validate() error {
+	return c.Called().Error(0)
+}
+
+func TestWithValidate(t *testing.T) {
+	cases := []struct {
+		name string
+		envs []string
+		err  error
+	}{
+		{name: "success", envs: []string{"SOME_FIELD=OK"}},
+		{name: "failure", envs: []string{"SOME_FIELD=FAIL"}, err: errors.New("test")},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg ConfigWithValidator
+			cfg.Test(t)
+
+			defer cfg.On("Validate").Return(tc.err).Unset()
+			require.ErrorIs(t, Load(&cfg, WithConfig(func(config *Config) { config.Envs = tc.envs })), tc.err)
+
+			cfg.AssertExpectations(t)
+		})
+	}
 }
 
 func TestCustomLoaders(t *testing.T) {
