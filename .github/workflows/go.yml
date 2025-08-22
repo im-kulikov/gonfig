@@ -40,6 +40,8 @@ jobs:
     name: Dependency review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
