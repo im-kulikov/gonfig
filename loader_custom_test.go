@@ -57,10 +57,11 @@ func TestWithValidate(t *testing.T) {
 }
 
 func TestCustomLoaders(t *testing.T) {
-	args := []string{
+	args := make([]string, 0, 8)
+	args = append(args,
 		"--string-field", "flag-value",
 		"--int-field", "80",
-		"--embed-float-field", "3.18"}
+		"--embed-float-field", "3.18")
 
 	file, err := os.CreateTemp(t.TempDir(), "test.json")
 	require.NoError(t, err)

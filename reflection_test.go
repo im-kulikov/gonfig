@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,7 +60,7 @@ func TestReflectFieldsOf(t *testing.T) {
 
 		for i, tt := range cases {
 			t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-				var output []*ReflectValue
+				output := make([]*ReflectValue, 0, reflect.TypeOf(ReflectStruct{}).NumField())
 				for elem, err := range ReflectFieldsOf(&ReflectStruct{}, tt.Options) {
 					assert.NoError(t, err)
 
