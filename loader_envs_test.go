@@ -217,3 +217,32 @@ func Test_EmptyForShowUsageOfEnvsWithErrors(t *testing.T) {
 	var example struct{}
 	require.Empty(t, UsageOfEnvs(example))
 }
+
+func Test_validParseSlice(t *testing.T) {
+	cases := []struct {
+		name string
+		envs []string
+		want any
+	}{
+		{name: "empty strings array", envs: []string{"TEST="}, want: []string{}},
+		{name: "empty ints array", envs: []string{"TEST="}, want: []int{}},
+		{name: "empty floats array", envs: []string{"TEST="}, want: []float64{}},
+		{name: "empty booleans array", envs: []string{"TEST="}, want: []bool{}},
+		{name: "multiple ints array", envs: []string{"TEST=1,2,3"}, want: []int{1, 2, 3}},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := reflect.New(reflect.StructOf([]reflect.StructField{
+				{
+					Name: "Test",
+					Type: reflect.TypeOf(tt.want),
+					Tag:  `env:"TEST"`,
+				},
+			})).Interface()
+
+			envs := PrepareEnvs(tt.envs, "")
+			require.NoError(t, LoadEnvs(envs, &cfg))
+		})
+	}
+}

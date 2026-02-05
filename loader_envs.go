@@ -296,7 +296,14 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 				return f.Interface(), nil
 			}
 
-			raw := strings.Split(f.Interface().(string), ",")
+			var str string
+			if in, ok := f.Interface().(string); !ok {
+				return f.Interface(), nil
+			} else if str = in; str == "" {
+				return nil, nil
+			}
+
+			raw := strings.Split(str, ",")
 			tmp := reflect.MakeSlice(t.Type(), len(raw), len(raw))
 			for i := 0; i < len(raw); i++ {
 				from := reflect.ValueOf(raw[i])
