@@ -89,8 +89,6 @@ func TestNew(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "custom.json")
 	require.NoError(t, err)
 
-	defer func() { require.NoError(t, os.Remove(file.Name())) }()
-
 	require.NoError(t, json.NewEncoder(file).Encode(map[string]interface{}{
 		"json-field": "custom-value",
 	}))
@@ -244,6 +242,8 @@ Environment variables:
 		}
 	})))
 }
+
+//nolint:funlen
 func TestLoadingOrder(t *testing.T) {
 	type ConfigStruct struct {
 		Value string `default:"default-val" env:"VALUE" flag:"value" json:"value"`
@@ -261,7 +261,6 @@ func TestLoadingOrder(t *testing.T) {
 	t.Run("Config file overrides default", func(t *testing.T) {
 		file, err := os.CreateTemp(t.TempDir(), "config.json")
 		require.NoError(t, err)
-		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
 
 		_, err = file.WriteString(`{"value": "file-val"}`)
 		require.NoError(t, err)
@@ -279,14 +278,13 @@ func TestLoadingOrder(t *testing.T) {
 	t.Run("ENV overrides config file", func(t *testing.T) {
 		file, err := os.CreateTemp(t.TempDir(), "config.json")
 		require.NoError(t, err)
-		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
 
 		_, err = file.WriteString(`{"value": "file-val"}`)
 		require.NoError(t, err)
 		require.NoError(t, file.Close())
 
 		require.NoError(t, os.Setenv("VALUE", "env-val"))
-		defer func() { assert.NoError(t, os.Unsetenv("VALUE")) }()
+		t.Cleanup(func() { assert.NoError(t, os.Unsetenv("VALUE")) })
 
 		var cfg ConfigStruct
 		require.NoError(t, New(Config{
@@ -299,14 +297,13 @@ func TestLoadingOrder(t *testing.T) {
 	t.Run("Flags override ENV", func(t *testing.T) {
 		file, err := os.CreateTemp(t.TempDir(), "config.json")
 		require.NoError(t, err)
-		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
 
 		_, err = file.WriteString(`{"value": "file-val"}`)
 		require.NoError(t, err)
 		require.NoError(t, file.Close())
 
 		require.NoError(t, os.Setenv("VALUE", "env-val"))
-		defer func() { assert.NoError(t, os.Unsetenv("VALUE")) }()
+		t.Cleanup(func() { assert.NoError(t, os.Unsetenv("VALUE")) })
 
 		var cfg ConfigStruct
 		require.NoError(t, New(Config{

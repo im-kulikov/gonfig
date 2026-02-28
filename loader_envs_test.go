@@ -247,14 +247,14 @@ func Test_validParseSlice(t *testing.T) {
 	}
 }
 func TestUsageOfEnvs_Nested(t *testing.T) {
-	type ApiConfig struct {
+	type APIConfig struct {
 		Address string `env:"ADDRESS" usage:"API address"`
 	}
 
 	t.Run("unreachable nested fields should be hidden", func(t *testing.T) {
 		type unreachableConfig struct {
 			Activator struct {
-				Api ApiConfig `env:""`
+				API APIConfig `env:""`
 			} `env:"ACT"`
 		}
 		var cfg unreachableConfig
@@ -266,7 +266,7 @@ func TestUsageOfEnvs_Nested(t *testing.T) {
 	t.Run("squashed nested fields should be visible", func(t *testing.T) {
 		type squashedConfig struct {
 			Activator struct {
-				Api ApiConfig `env:",squash"`
+				API APIConfig `env:",squash"`
 			} `env:"ACT"`
 		}
 		var cfg squashedConfig
@@ -278,7 +278,7 @@ func TestUsageOfEnvs_Nested(t *testing.T) {
 	t.Run("anonymous nested fields should be visible", func(t *testing.T) {
 		type anonConfig struct {
 			Activator struct {
-				ApiConfig
+				APIConfig
 			} `env:"ACT"`
 		}
 		var cfg anonConfig

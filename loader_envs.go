@@ -103,7 +103,7 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 // generating usage information based on the tags. If a struct field is another struct, it recurses
 // into the nested fields.
 //
-// nolint:funlen
+// nolint:funlen,gocognit
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	output := make([]envUsage, 0)
 	exists := make(map[string]struct{})

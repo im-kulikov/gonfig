@@ -66,10 +66,6 @@ func TestCustomLoaders(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "test.json")
 	require.NoError(t, err)
 
-	defer func() {
-		require.NoError(t, os.Remove(file.Name()))
-	}()
-
 	require.NoError(t, json.NewEncoder(file).Encode(CustomLoaderConfig{
 		FieldString: "json-value",
 		FieldInt:    19,
