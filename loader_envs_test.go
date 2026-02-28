@@ -246,3 +246,55 @@ func Test_validParseSlice(t *testing.T) {
 		})
 	}
 }
+func TestUsageOfEnvs_Nested(t *testing.T) {
+	type ApiConfig struct {
+		Address string `env:"ADDRESS" usage:"API address"`
+	}
+
+	t.Run("unreachable nested fields should be hidden", func(t *testing.T) {
+		type unreachableConfig struct {
+			Activator struct {
+				Api ApiConfig `env:""`
+			} `env:"ACT"`
+		}
+		var cfg unreachableConfig
+		usage := UsageOfEnvs(&cfg)
+
+		require.NotContains(t, usage, "ACT_ADDRESS")
+	})
+
+	t.Run("squashed nested fields should be visible", func(t *testing.T) {
+		type squashedConfig struct {
+			Activator struct {
+				Api ApiConfig `env:",squash"`
+			} `env:"ACT"`
+		}
+		var cfg squashedConfig
+		usage := UsageOfEnvs(&cfg)
+
+		require.Contains(t, usage, "ACT_ADDRESS")
+	})
+
+	t.Run("anonymous nested fields should be visible", func(t *testing.T) {
+		type anonConfig struct {
+			Activator struct {
+				ApiConfig
+			} `env:"ACT"`
+		}
+		var cfg anonConfig
+		usage := UsageOfEnvs(&cfg)
+
+		require.Contains(t, usage, "ACT_ADDRESS")
+	})
+
+	t.Run("leading underscores should be removed for empty root tags", func(t *testing.T) {
+		type rootConfig struct {
+			Field string `env:"FIELD"`
+		}
+		var cfg rootConfig
+		usage := UsageOfEnvs(&cfg)
+
+		require.Contains(t, usage, "- 'FIELD' <string>")
+		require.NotContains(t, usage, "- '_FIELD'")
+	})
+}

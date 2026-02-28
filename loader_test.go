@@ -244,3 +244,74 @@ Environment variables:
 		}
 	})))
 }
+func TestLoadingOrder(t *testing.T) {
+	type ConfigStruct struct {
+		Value string `default:"default-val" env:"VALUE" flag:"value" json:"value"`
+		Path  string `flag:"config,config:true"`
+	}
+
+	// 1. Default value
+	t.Run("Default value", func(t *testing.T) {
+		var cfg ConfigStruct
+		require.NoError(t, New(Config{}).Load(&cfg))
+		assert.Equal(t, "default-val", cfg.Value)
+	})
+
+	// 2. Config file overrides default
+	t.Run("Config file overrides default", func(t *testing.T) {
+		file, err := os.CreateTemp(t.TempDir(), "config.json")
+		require.NoError(t, err)
+		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
+
+		_, err = file.WriteString(`{"value": "file-val"}`)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+
+		var cfg ConfigStruct
+		err = New(Config{
+			Args: []string{"--config", file.Name()},
+		}, WithJSONLoader()).Load(&cfg)
+		require.NoError(t, err)
+		assert.Equal(t, "file-val", cfg.Value)
+	})
+
+	// 3. ENV overrides config file
+	t.Run("ENV overrides config file", func(t *testing.T) {
+		file, err := os.CreateTemp(t.TempDir(), "config.json")
+		require.NoError(t, err)
+		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
+
+		_, err = file.WriteString(`{"value": "file-val"}`)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+
+		require.NoError(t, os.Setenv("VALUE", "env-val"))
+		defer func() { assert.NoError(t, os.Unsetenv("VALUE")) }()
+
+		var cfg ConfigStruct
+		require.NoError(t, New(Config{
+			Args: []string{"--config", file.Name()},
+		}, WithJSONLoader()).Load(&cfg))
+		assert.Equal(t, "env-val", cfg.Value)
+	})
+
+	// 4. Flags override ENV
+	t.Run("Flags override ENV", func(t *testing.T) {
+		file, err := os.CreateTemp(t.TempDir(), "config.json")
+		require.NoError(t, err)
+		defer func() { assert.NoError(t, os.Remove(file.Name())) }()
+
+		_, err = file.WriteString(`{"value": "file-val"}`)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+
+		require.NoError(t, os.Setenv("VALUE", "env-val"))
+		defer func() { assert.NoError(t, os.Unsetenv("VALUE")) }()
+
+		var cfg ConfigStruct
+		require.NoError(t, New(Config{
+			Args: []string{"--config", file.Name(), "--value", "flag-val"},
+		}, WithJSONLoader()).Load(&cfg))
+		assert.Equal(t, "flag-val", cfg.Value)
+	})
+}

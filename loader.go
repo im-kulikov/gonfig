@@ -21,8 +21,12 @@ type Error string
 //   - EnvPrefix: A string that specifies a prefix for filtering environment variables. Only variables
 //     starting with this prefix will be considered.
 //
-//   - LoaderOrder: Defines the order in which the parsers (defaults, env, flags) will be executed.
-//     This allows prioritization of certain parsers over others.
+//   - LoaderOrder: Defines the default order in which the parsers are executed:
+//     1. Defaults (from struct tags)
+//     2. Config source (pre-scanning flags for configuration path)
+//     3. Custom loaders (e.g. file loaders like JSON, YAML, TOML)
+//     4. Environment variables (overrides file values)
+//     5. Flags (highest priority, overrides all previous)
 //
 //   - Envs: A slice of environment variables to be used for parsing. If left nil, the loader will
 //     default to using `os.Environ()`.
@@ -136,9 +140,8 @@ type LoaderOption func(*loader) error
 //     reads configuration values from environment variables, which can be used to configure
 //     the application in different deployment environments.
 //
-// Example usage:
-// To specify the order in which parsers should be applied, you can set the `LoaderOrder`
-// field in the `Config` structure with these constants, e.g.,
+// To specify the order in which parsers should be applied, the default sequence is:
+// Defaults -> Config-path -> File -> Env -> Flags.
 //
 //	config := Config{
 //	    LoaderOrder: []ParserType{ParserDefaults, ParserEnv, ParserFlags},
@@ -374,7 +377,8 @@ func WithDefaults(keyTag string, defaults map[string]any) LoaderOption {
 // The function performs the following tasks:
 //   - If no environment variables are provided in the Config, it defaults to using `os.Environ()`.
 //   - If no arguments are provided in the Config, it defaults to `os.Args[1:]`.
-//   - If no loader order is defined, it sets a default order: Defaults -> Env -> Flags.
+//   - If no loader order is defined, it sets a default order:
+//     Defaults -> Config Path -> File -> Env -> Flags.
 //   - Initializes a map of parsers (`parsers`), based on the Config options such as SkipDefaults,
 //     SkipEnv, and SkipFlags, to include or exclude certain parsers.
 //
@@ -431,7 +435,12 @@ func setLoaderDefaults(c Config) *loader {
 func New(config Config, options ...LoaderOption) Parser {
 	l := setLoaderDefaults(config)
 
-	// return group parser
+	// return group parser with the following loading priority:
+	// 1. Defaults
+	// 2. Config path (pre-scan)
+	// 3. Custom orders (e.g. file loaders)
+	// 4. Envs (overrides file)
+	// 5. Flags (highest priority)
 	return &parserFunc{call: wrapUsageLoader(l, func(v interface{}) error {
 		l.output = v
 
@@ -443,21 +452,22 @@ func New(config Config, options ...LoaderOption) Parser {
 
 		order := make([]ParserType, 0, len(l.groups)+4)
 
-		if !config.SkipDefaults { // set defaults
+		if !config.SkipDefaults { // 1. set defaults
 			order = append(order, ParserDefaults)
 		}
 
-		if !config.SkipEnv { // set envs
-			order = append(order, ParserEnv)
-		}
-
-		if !config.SkipFlags { // set config flag
+		if !config.SkipFlags { // 2. set config path flag (pre-scan)
 			order = append(order, ParserConfigSet)
 		}
 
+		// 3. set custom loaders (e.g. file loaders like JSON/YAML/TOML)
 		order = append(order, l.orders...)
 
-		if !config.SkipFlags { // set flags
+		if !config.SkipEnv { // 4. set envs (overrides file)
+			order = append(order, ParserEnv)
+		}
+
+		if !config.SkipFlags { // 5. set final flags (highest priority)
 			order = append(order, ParserFlags)
 		}
 

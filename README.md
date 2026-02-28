@@ -25,15 +25,10 @@ This library simplifies configuration management, making it easy to define, over
 
 The priority described below is considered the default priority and can be modified through configuration settings.
 
-1. **Defaults** — These are basic configuration values embedded in the application's code. They ensure the application can run even if no external configurations are provided.
-
-2. **Environment Variables** — Environment variables are usually used to configure deployment-related parameters (e.g., logins, ports, database addresses). These variables often have a higher priority as they can be dynamically set depending on the environment.
-
-3. **Flags** — Command-line flags usually have the highest priority since they allow direct overriding of any settings at application startup. This is useful when a quick configuration change is needed without modifying the code or config files.
-
-4. **Config File** — A configuration file stored on disk, typically containing predefined parameters for a specific environment. This can be in formats like JSON, YAML, TOML, etc.
-
-5. **Remote Config** — This is a configuration retrieved from external sources, such as configuration servers or cloud services (e.g., Consul, Etcd, or AWS SSM). These systems usually allow centralized management of settings across different applications.
+1. **Defaults** — Basic configuration values embedded in the application's code via `default` tags.
+2. **Config File** — Values loaded from a configuration file (JSON, YAML, TOML). The path is determined by a flag pre-scan.
+3. **Environment Variables** — Values from environment variables override file-based configurations.
+4. **Flags** — Command-line flags have the highest priority and override all previous values.
 
 ## Installation
 
@@ -45,11 +40,10 @@ go get github.com/im-kulikov/gonfig
 
 
 ### Explain Hierarchy:
-1. **Defaults** — Set in the code. For example, the default server port is `8080`.
-2. **Environment Variables** — Environment variables can be used to set database connections or other services linked to the environment.
-3. **Flags** — Command-line arguments always have the highest priority, as they can be specified at application startup to override any other parameter.
-4. **Config File** — The configuration file specifies more detailed parameters, such as database connections or the application's operating mode.
-5. **Remote Config** — Configuration retrieved from a remote server can override settings from the config file.
+1. **Defaults** — Set in the code via struct tags.
+2. **Config File** — Detailed parameters provided in a structured file.
+3. **Environment Variables** — Overrides file settings for deployment flexibility.
+4. **Flags** — Direct overrides at runtime, providing the final word on configuration.
 
 ## Current status
 
@@ -204,6 +198,28 @@ func main() {
 ## Custom Loaders
 
 You can implement your own configuration loaders by implementing the `Parser` interface.
+
+### Nested Configurations
+
+When using nested structs, you can either provide an environment name for each level, or use the `squash` option to expose underlying fields directly.
+
+```go
+type Config struct {
+    // Exposes ACT_API_ADDRESS
+    Activator struct {
+        Api struct {
+            Address string `env:"ADDRESS"`
+        } `env:"API"`
+    } `env:"ACT"`
+
+    // Exposes DB_HOST (skips intermediate 'Database' name)
+    Database struct {
+        Host string `env:"HOST"`
+    } `env:",squash"`
+}
+```
+
+If a nested struct has an empty `env:""` tag and is not squashed, its fields will **not** be reachable via environment variables and will be hidden from the help output.
 
 ```go
 type CustomLoader struct {}

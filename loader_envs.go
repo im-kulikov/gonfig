@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -112,13 +113,29 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 		}
 
 		var name string
+		var unreachable bool
 		for parent := field; parent != nil; parent = parent.Owner {
-			env := parent.Field.Tag.Get("env")
-			if tmp := strings.Split(env, ","); len(tmp) > 0 {
-				env = tmp[0]
+			tag := parent.Field.Tag.Get(envTag)
+			tmp := strings.Split(tag, ",")
+			env := tmp[0]
+
+			if env == "-" {
+				unreachable = true
+
+				break
 			}
 
-			if env == "" || env == "-" {
+			if env == "" && parent.Owner != nil {
+				if slices.Contains(tmp, "squash") || parent.Field.Anonymous {
+					continue
+				}
+
+				unreachable = true
+
+				break
+			}
+
+			if env == "" {
 				continue
 			}
 
@@ -131,7 +148,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 			name = env + envDelimiter + name
 		}
 
-		if name == "" || name == "-" {
+		if unreachable || name == "" {
 			continue
 		}
 
