@@ -24,12 +24,31 @@ const (
 	FlagSetName = "flags"
 )
 
+var markerType = reflect.TypeOf((*DefaultConfigMarker)(nil)).Elem()
+
+// DefaultConfigMarker is an interface used to identify structures that
+// provide default configuration flag support.
+type DefaultConfigMarker interface {
+	IsDefaultConfig()
+}
+
+// DefaultConfigFlag is a zero-size structure that can be embedded into
+// configuration structures to automatically enable default --config and -c flags.
+type DefaultConfigFlag struct{}
+
+// IsDefaultConfig is a marker method that satisfies the DefaultConfigMarker interface.
+func (DefaultConfigFlag) IsDefaultConfig() {}
+
 // newFlagsLoader creates a new parser that loads configuration from command-line flags.
 // It uses the provided arguments to populate the configuration by preparing and parsing the flags.
 // Returns a Parser that processes command-line flags.
 func newFlagsLoader(l *loader) *parserFunc {
 	return &parserFunc{name: ParserFlags, call: func(val interface{}) error {
 		set := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
+		if containsDefaultConfigFlag(val) {
+			set.StringVarP(&l.config, "config", "c", l.config, "path to config file")
+		}
+
 		if err := PrepareFlags(set, val); err != nil {
 			return err
 		}
@@ -95,7 +114,7 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 //	parser := parseConfigPath(loaderInstance)
 //	err := parser.Parse(configStruct)  // Parses the config path from the struct tags and command-line arguments.
 func parseConfigPath(l *loader) *parserFunc {
-	return &parserFunc{name: "config-path", call: func(val any) error {
+	return &parserFunc{name: "config-path", call: parseDefaultConfigPath(l, func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
 		flags.ParseErrorsWhitelist.UnknownFlags = true
@@ -126,7 +145,70 @@ func parseConfigPath(l *loader) *parserFunc {
 		}
 
 		return nil
-	}}
+	})}
+}
+
+// parseDefaultConfigPath is a decorator that wraps a configuration path parser.
+// If the DefaultConfigFlag is present in the destination struct, it pre-scans
+// the command-line arguments for the --config and -c flags.
+func parseDefaultConfigPath(l *loader, call func(val any) error) func(any) error {
+	return func(val any) error {
+		if !containsDefaultConfigFlag(val) {
+			return call(val)
+		}
+
+		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		flags.ParseErrorsWhitelist.UnknownFlags = true
+
+		flags.StringVarP(&l.config, "config", "c", l.config, "path to config file")
+		if err := flags.Parse(l.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
+			return fmt.Errorf("(config-path) could not parse flags: %w", err)
+		}
+
+		return nil
+	}
+}
+
+// containsDefaultConfigFlag checks if the provided value or any of its embedded fields
+// satisfy the DefaultConfigMarker interface. It uses type assertion for fast path
+// and falls back to recursive reflection for nested or pointer embeddings.
+func containsDefaultConfigFlag(val any) bool {
+	if _, ok := val.(DefaultConfigMarker); ok {
+		return true
+	}
+
+	t := reflect.TypeOf(val)
+	if t == nil {
+		return false
+	}
+
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Type.Implements(markerType) || reflect.PointerTo(f.Type).Implements(markerType) {
+			return true
+		}
+
+		if f.Anonymous {
+			ft := f.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct && containsDefaultConfigFlag(reflect.New(ft).Interface()) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // prepareFlag sets up a flag in the given flag set based on the field's type and the provided struct field information.

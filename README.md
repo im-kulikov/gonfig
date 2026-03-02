@@ -89,6 +89,25 @@ func main() {
 }
 ```
 
+### Default Configuration Flag
+
+You can use `DefaultConfigFlag` to automatically enable `--config / -c` flags without manual tagging:
+
+```go
+type Config struct {
+	gonfig.DefaultConfigFlag
+	Field string `flag:"field" env:"FIELD" default:"default-value"`
+}
+
+// go run main.go --config config.yml
+func main() {
+	var cfg Config
+	if err := gonfig.Load(&cfg, gonfig.WithYAMLLoader()); err != nil {
+		panic(err)
+	}
+}
+```
+
 ### Extended (using New.Load)
 
 ```go
