@@ -117,7 +117,7 @@ func parseConfigPath(l *loader) *parserFunc {
 	return &parserFunc{name: "config-path", call: parseDefaultConfigPath(l, func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
-		flags.ParseErrorsWhitelist.UnknownFlags = true
+		flags.ParseErrorsAllowlist.UnknownFlags = true
 
 		var path string
 		for elem, err := range ReflectFieldsOf(val, ReflectOptions{CanSet: True()}) {
@@ -159,7 +159,7 @@ func parseDefaultConfigPath(l *loader, call func(val any) error) func(any) error
 
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
-		flags.ParseErrorsWhitelist.UnknownFlags = true
+		flags.ParseErrorsAllowlist.UnknownFlags = true
 
 		flags.StringVarP(&l.config, "config", "c", l.config, "path to config file")
 		if err := flags.Parse(l.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
