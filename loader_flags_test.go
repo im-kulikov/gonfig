@@ -332,7 +332,7 @@ func TestPrepareFlags_Errors(t *testing.T) {
 	}{}))
 
 	require.NoError(t, PrepareFlags(flagSet, &TestFlagConfig{}))
-	// error, because we ignore field
+	// error, because we ignore a field
 	require.EqualError(t, flagSet.Parse([]string{"-s", "a/b/c/d/"}), "unknown shorthand flag: 's' in -s")
 }
 

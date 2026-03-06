@@ -23,10 +23,10 @@ type Error string
 //
 //   - LoaderOrder: Defines the default order in which the parsers are executed:
 //     1. Defaults (from struct tags)
-//     2. Config source (pre-scanning flags for configuration path)
-//     3. Custom loaders (e.g. file loaders like JSON, YAML, TOML)
+//     2. Config source (pre-scanning flags for a configuration path)
+//     3. Custom loaders (e.g., file loaders like JSON, YAML, TOML)
 //     4. Environment variables (overrides file values)
-//     5. Flags (highest priority, overrides all previous)
+//     5. Flags (the highest priority, overrides all previous)
 //
 //   - Envs: A slice of environment variables to be used for parsing. If left nil, the loader will
 //     default to using `os.Environ()`.
@@ -359,7 +359,7 @@ func WithConfig(handler func(*Config)) LoaderOption {
 // For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}}
 //
 // Parameters:
-// - keyTag: allows to use struct-tag to find field names.
+// - keyTag: allows using struct-tag to find field names.
 // - defaults: A map where keys are field names (or tagged keys) and values are default values.
 //
 // Returns:
@@ -435,12 +435,12 @@ func setLoaderDefaults(c Config) *loader {
 func New(config Config, options ...LoaderOption) Parser {
 	l := setLoaderDefaults(config)
 
-	// return group parser with the following loading priority:
+	// return a group parser with the following loading priority:
 	// 1. Defaults
 	// 2. Config path (pre-scan)
-	// 3. Custom orders (e.g. file loaders)
+	// 3. Custom orders (e.g., file loaders)
 	// 4. Envs (overrides file)
-	// 5. Flags (highest priority)
+	// 5. Flags (the highest priority)
 	return &parserFunc{call: wrapUsageLoader(l, func(v interface{}) error {
 		l.output = v
 
@@ -460,14 +460,14 @@ func New(config Config, options ...LoaderOption) Parser {
 			order = append(order, ParserConfigSet)
 		}
 
-		// 3. set custom loaders (e.g. file loaders like JSON/YAML/TOML)
+		// 3. set custom loaders (e.g., file loaders like JSON/YAML/TOML)
 		order = append(order, l.orders...)
 
 		if !config.SkipEnv { // 4. set envs (overrides file)
 			order = append(order, ParserEnv)
 		}
 
-		if !config.SkipFlags { // 5. set final flags (highest priority)
+		if !config.SkipFlags { // 5. set final flags (the highest priority)
 			order = append(order, ParserFlags)
 		}
 

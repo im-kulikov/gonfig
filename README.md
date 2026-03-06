@@ -1,6 +1,7 @@
 ![gonfig](.github/logo-x2.png)
 
 [![GitHub Workflow Status](https://github.com/im-kulikov/gonfig/actions/workflows/go.yml/badge.svg)](https://github.com/im-kulikov/gonfig/actions/workflows/go.yml)
+[![Coverage](https://codecov.io/gh/im-kulikov/gonfig/branch/main/graph/badge.svg)](https://codecov.io/gh/im-kulikov/gonfig)
 [![Go Report Card](https://goreportcard.com/badge/github.com/im-kulikov/gonfig)](https://goreportcard.com/report/github.com/im-kulikov/gonfig)
 ![Go version](https://img.shields.io/github/go-mod/go-version/im-kulikov/gonfig?style=flat&label=Go%20%3E%3D)
 [![PkgGoDev](https://pkg.go.dev/badge/mod/github.com/im-kulikov/gonfig)](https://pkg.go.dev/mod/github.com/im-kulikov/gonfig)
@@ -54,7 +55,7 @@ go get github.com/im-kulikov/gonfig
 - [x] Load YAML `WithYAMLLoader`
 - [x] Load JSON `WithJSONLoader`
 - [x] Load TOML `WithTOMLLoader`
-- [x] Other formats, you can write it using custom loader
+- [x] Other formats, you can write it using a custom loader
 
 ## Examples
 

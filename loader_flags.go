@@ -171,7 +171,7 @@ func parseDefaultConfigPath(l *loader, call func(val any) error) func(any) error
 }
 
 // containsDefaultConfigFlag checks if the provided value or any of its embedded fields
-// satisfy the DefaultConfigMarker interface. It uses type assertion for fast path
+// satisfy the DefaultConfigMarker interface. It uses type assertion for a fast path
 // and falls back to recursive reflection for nested or pointer embeddings.
 func containsDefaultConfigFlag(val any) bool {
 	if _, ok := val.(DefaultConfigMarker); ok {

@@ -16,11 +16,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
-      # Fail fast is disabled because there are Go version specific features and tests
+      # Fail fast is disabled because there are Go version-specific features and tests
       # that should be able to fail independently.
       fail-fast: false
       matrix:
         go: [ '1.23', '1.24', '1.25', '1.26' ]
+        include:
+          - go: '1.26'
+            run_linter: true
+            run_coverage: true
+          - go: '1.23'
+            run_linter: false
+            run_coverage: false
+          - go: '1.24'
+            run_linter: false
+            run_coverage: false
+          - go: '1.25'
+            run_linter: false
+            run_coverage: false
 
     steps:
     - uses: actions/checkout@v4
@@ -31,12 +44,32 @@ jobs:
       with:
         go-version: ${{ matrix.go }}
 
+    - name: Cache Go modules
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ matrix.go }}-
+
+    - name: Install dependencies
+      run: go mod download
+
     - name: GolangCi Linter
-      uses: golangci/golangci-lint-action@v8
+      if: matrix.run_linter == true
+      uses: golangci/golangci-lint-action@v9
 
     - name: Test
       run: go test -v ./...
 
+    - name: Upload coverage reports to Codecov
+      if: matrix.run_coverage == true
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        slug: im-kulikov/gonfig
 
   dependency-review:
     name: Dependency review
