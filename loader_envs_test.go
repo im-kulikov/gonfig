@@ -224,27 +224,67 @@ func Test_validParseSlice(t *testing.T) {
 		envs []string
 		want any
 	}{
-		{name: "empty strings array", envs: []string{"TEST="}, want: []string{}},
-		{name: "empty ints array", envs: []string{"TEST="}, want: []int{}},
-		{name: "empty floats array", envs: []string{"TEST="}, want: []float64{}},
-		{name: "empty booleans array", envs: []string{"TEST="}, want: []bool{}},
+		{name: "empty strings array", envs: []string{"TEST="}, want: []string(nil)},
+		{name: "empty ints array", envs: []string{"TEST="}, want: []int(nil)},
+		{name: "empty floats array", envs: []string{"TEST="}, want: []float64(nil)},
+		{name: "empty booleans array", envs: []string{"TEST="}, want: []bool(nil)},
 		{name: "multiple ints array", envs: []string{"TEST=1,2,3"}, want: []int{1, 2, 3}},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := reflect.New(reflect.StructOf([]reflect.StructField{
+			target := reflect.New(reflect.StructOf([]reflect.StructField{
 				{
 					Name: "Test",
 					Type: reflect.TypeOf(tt.want),
 					Tag:  `env:"TEST"`,
 				},
-			})).Interface()
+			}))
 
 			envs := PrepareEnvs(tt.envs, "")
-			require.NoError(t, LoadEnvs(envs, &cfg))
+			require.NoError(t, LoadEnvs(envs, target.Interface()))
+
+			// Use reflection to get the value of the "Test" field
+			val := target.Elem().FieldByName("Test")
+			if reflect.ValueOf(tt.want).Len() == 0 {
+				require.Empty(t, val.Interface())
+			} else {
+				require.Equal(t, tt.want, val.Interface())
+			}
 		})
 	}
+}
+
+func TestLoadEnvs_CustomStringType(t *testing.T) {
+	type CustomString string
+	var config struct {
+		List []CustomString `env:"LIST"`
+	}
+
+	envs := PrepareEnvs([]string{"LIST=a,b,c"}, "")
+	require.NoError(t, LoadEnvs(envs, &config))
+	require.Equal(t, []CustomString{"a", "b", "c"}, config.List)
+}
+
+func TestLoadEnvs_CustomStringTypeSource(t *testing.T) {
+	type CustomString string
+	var config struct {
+		List []string `env:"LIST"`
+	}
+
+	envs := map[string]any{"LIST": CustomString("a,b,c")}
+	require.NoError(t, LoadEnvs(envs, &config))
+	require.Equal(t, []string{"a", "b", "c"}, config.List)
+}
+
+func TestLoadEnvs_EmptySlice(t *testing.T) {
+	var config struct {
+		List []string `env:"LIST"`
+	}
+
+	envs := PrepareEnvs([]string{"LIST="}, "")
+	require.NoError(t, LoadEnvs(envs, &config))
+	require.Empty(t, config.List)
 }
 func TestUsageOfEnvs_Nested(t *testing.T) {
 	type APIConfig struct {

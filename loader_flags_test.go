@@ -352,3 +352,51 @@ func Test_parseConfigPathWithErrors(t *testing.T) {
 		require.ErrorContains(t, err, `flag needs an argument: --config`)
 	})
 }
+
+func TestDefaultConfigFlag_IsDefaultConfig(t *testing.T) {
+	DefaultConfigFlag{}.IsDefaultConfig()
+}
+
+func Test_containsDefaultConfigFlag(t *testing.T) {
+	type CustomMarker struct{ DefaultConfigFlag }
+	type NestedMarker struct{ CustomMarker }
+	type PtrMarker struct{ *DefaultConfigFlag }
+	type NamedFieldMarker struct {
+		Marker DefaultConfigFlag
+	}
+
+	cases := []struct {
+		name string
+		val  any
+		want bool
+	}{
+		{name: "nil", val: nil, want: false},
+		{name: "non-struct", val: 123, want: false},
+		{name: "direct-marker", val: DefaultConfigFlag{}, want: true},
+		{name: "pointer-to-marker", val: &DefaultConfigFlag{}, want: true},
+		{name: "struct-with-marker-field", val: struct{ F DefaultConfigFlag }{}, want: true},
+		{name: "struct-with-marker-ptr-field", val: struct{ F *DefaultConfigFlag }{}, want: true},
+		{name: "embedded-marker", val: CustomMarker{}, want: true},
+		{name: "nested-embedded-marker", val: NestedMarker{}, want: true},
+		{name: "embedded-ptr-marker", val: PtrMarker{DefaultConfigFlag: &DefaultConfigFlag{}}, want: true},
+		{name: "embedded-ptr-struct-marker", val: struct{ *CustomMarker }{}, want: true},
+		{name: "embedded-nested-marker-recursive", val: struct{ NestedMarker }{}, want: true},
+		{name: "embedded-ptr-marker-recursive", val: struct{ *DefaultConfigFlag }{}, want: true},
+		{name: "embedded-custom-nested", val: struct{ *PtrMarker }{}, want: true},
+		{name: "embedded-ptr-struct-with-named-marker-field", val: struct{ *NamedFieldMarker }{}, want: true},
+		{name: "no-marker", val: struct{ F int }{}, want: false},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, containsDefaultConfigFlag(tt.val))
+		})
+	}
+}
+
+func Test_parseDefaultConfigPath_Error(t *testing.T) {
+	l := &loader{Config: Config{Args: []string{"--config"}}}
+	err := parseDefaultConfigPath(l, func(any) error { return nil })(&DefaultConfigFlag{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "(config-path) could not parse flags")
+}

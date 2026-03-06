@@ -314,9 +314,13 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 			}
 
 			var str string
-			if in, ok := f.Interface().(string); !ok {
-				return f.Interface(), nil
-			} else if str = in; str == "" {
+			if in, ok := f.Interface().(string); ok {
+				str = in
+			} else {
+				str = f.String()
+			}
+
+			if str == "" {
 				return nil, nil
 			}
 
@@ -333,7 +337,7 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 					return nil, err
 				}
 
-				tmp.Index(i).Set(reflect.ValueOf(val))
+				tmp.Index(i).Set(reflect.ValueOf(val).Convert(t.Type().Elem()))
 			}
 
 			return tmp.Interface(), nil
