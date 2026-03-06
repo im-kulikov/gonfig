@@ -353,7 +353,7 @@ func Test_parseConfigPathWithErrors(t *testing.T) {
 	})
 }
 
-func TestDefaultConfigFlag_IsDefaultConfig(t *testing.T) {
+func TestDefaultConfigFlag_IsDefaultConfig(*testing.T) {
 	DefaultConfigFlag{}.IsDefaultConfig()
 }
 
