@@ -363,7 +363,8 @@ func (l *loader) setLoaderDefaults() {
 //  5. flags.
 //
 // Parsers disabled by Config.Skip* are left out. Then --print-config is handled,
-// required fields are checked and Validate is called if v implements LoaderValidator.
+// required fields are checked and Validate is called for v and the structs inside it
+// that implement LoaderValidator.
 // The Parser can be used from several goroutines.
 //
 //nolint:ireturn
@@ -413,11 +414,7 @@ func (l *loader) load(v any) error {
 		return err
 	}
 
-	if validator, ok := v.(LoaderValidator); ok {
-		return validator.Validate()
-	}
-
-	return nil
+	return validate(v)
 }
 
 // print writes the loaded config for --print-config and exits, like --help does.

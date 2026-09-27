@@ -1,7 +1,9 @@
 package gonfig
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -82,4 +84,56 @@ func ValidateRequiredFields(input any) error {
 	}
 
 	return fmt.Errorf("%w:%s", ErrMissingFields, strings.Join(lines, ""))
+}
+
+// validate calls Validate of every struct in v that implements LoaderValidator, nested
+// structs first and v itself last, and joins their errors. An error of v alone is
+// returned as is. v is a pointer to a struct: ValidateRequiredFields has checked it.
+func validate(v any) error {
+	errs := validateFields(reflect.ValueOf(v).Elem(), "")
+
+	if root, ok := v.(LoaderValidator); ok {
+		if err := root.Validate(); err != nil && len(errs) == 0 {
+			return err
+		} else if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// validateFields validates the nested structs of v, depth first. Pointers to structs
+// are not followed, like everywhere else in the loader.
+func validateFields(v reflect.Value, path string) []error {
+	var errs []error
+
+	for field, value := range v.Fields() {
+		if value.Kind() != reflect.Struct {
+			continue
+		}
+
+		name := path
+		if !field.Anonymous { // embedded fields are promoted: no segment in the path
+			name = strings.TrimPrefix(path+"."+field.Name, ".")
+		}
+
+		errs = append(errs, validateFields(value, name)...)
+
+		if field.Anonymous { // its Validate, if any, is promoted to the parent
+			continue
+		}
+
+		if !value.Addr().CanInterface() { // an unexported field
+			continue
+		}
+
+		if validator, ok := value.Addr().Interface().(LoaderValidator); ok {
+			if err := validator.Validate(); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", name, err))
+			}
+		}
+	}
+
+	return errs
 }

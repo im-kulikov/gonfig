@@ -212,8 +212,9 @@ with `gonfig.WithEnvPrefix(prefix)` when the loader uses `Config.EnvPrefix`.
 ## Validation
 
 `required:"true"` fails the loading when the field is still its zero value after every source, so `0` and
-`false` cannot be required values. The error lists every missing field with its path. If the struct
-passed to `Load` implements `LoaderValidator`, its `Validate()` is called last:
+`false` cannot be required values. The error lists every missing field with its path. Then `Validate()`
+is called for every struct that implements `LoaderValidator`: nested structs first, the struct passed to
+`Load` last; errors of nested structs name their field (`Server: port 80 is privileged`):
 
 ```go
 func (c *Config) Validate() error {
@@ -295,10 +296,9 @@ by `New` can be reused, also from several goroutines.
 
 - `default` tags: no `[]time.Duration` or lists of `TextUnmarshaler` types; map values cannot contain `:`;
   `net.IPMask` is IPv4 only.
-- Pointers to structs are not walked: `default`, `required` and flags inside them are ignored
-  (environment variables and files do fill them).
+- Pointers to structs are not walked: `default`, `required`, flags and `Validate()` inside them are
+  ignored (environment variables and files do fill them).
 - Flags: no maps, `int8`, `int16`, `uint8`, `uint16` or named types such as `type Port int`.
-- `Validate()` is called for the struct passed to `Load` only, not for nested structs.
 - Positional arguments are not available after loading.
 
 ## Upgrading to v0.7

@@ -16,7 +16,10 @@ type Parser interface {
 	Type() ParserType
 }
 
-// LoaderValidator defines an interface for validating loaders by implementing a Validate method.
+// LoaderValidator is implemented by a config struct, or a struct inside it, that checks
+// itself after loading. Nested structs are validated first, the struct passed to Load
+// last; the errors of nested structs name the path of their field. An embedded struct
+// is not validated on its own: its Validate is promoted to the parent.
 type LoaderValidator interface {
 	Validate() error
 }
