@@ -1,6 +1,7 @@
 package gonfig
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"reflect"
@@ -86,7 +87,7 @@ var fuzzDefaultTypes = []reflect.Type{
 // FuzzDefault: a `default` tag never panics, and a pointer takes what its element takes.
 func FuzzDefault(f *testing.F) {
 	for _, seed := range []string{"1", "-1", "5s", "info", "127.0.0.1", "/24", "10.0.0.0/8",
-		"a,b", "a:1,b:2", "1,2,3", "1+2i", "true"} {
+		"a,b", "a:1,b:2", "1,2,3", "1+2i", "true", "NaN"} {
 		f.Add(seed)
 	}
 
@@ -101,7 +102,8 @@ func FuzzDefault(f *testing.F) {
 			require.Equal(t, errPlain == nil, errPtr == nil, "%s from %q: %v, pointer: %v", typ, value, errPlain, errPtr)
 
 			if errPlain == nil && !ptr.IsNil() {
-				require.Equal(t, plain.Interface(), ptr.Elem().Interface(), "%s from %q", typ, value)
+				// as text: NaN != NaN
+				require.Equal(t, fmt.Sprintf("%#v", plain), fmt.Sprintf("%#v", ptr.Elem()), "%s from %q", typ, value)
 			}
 		}
 	})
