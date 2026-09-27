@@ -366,3 +366,37 @@ func TestWithStrict(t *testing.T) {
 
 	require.Error(t, load(WithConfig(func(c *Config) { c.Strict = true })))
 }
+
+// M-11: several file loaders all read the same path.
+func TestFileLoaders_ByExtension(t *testing.T) {
+	type settings struct {
+		DefaultConfigFlag
+
+		Name string `yaml:"name" json:"name" toml:"name"`
+	}
+
+	all := []LoaderOption{WithJSONLoader(), WithYAMLLoader(), WithTOMLLoader()}
+	cases := []struct {
+		file, content string
+		loaders       []LoaderOption
+	}{
+		{"config.yaml", "name: yaml\n", all},
+		{"config.YML", "name: yaml\n", all},
+		{"config.json", `{"name": "json"}`, all},
+		{"config.toml", "name = \"toml\"\n", all},
+		{"config.conf", `{"name": "json"}`, all},                              // unknown: the first loader
+		{"config.conf", "name: yaml\n", []LoaderOption{WithYAMLLoader()}},     // a single loader reads any path
+		{"config.json", "name: yaml\n", []LoaderOption{WithYAMLLoader()}},     // even another extension
+		{"config.yaml", `{"name": "json"}`, []LoaderOption{WithJSONLoader()}}, // as before
+	}
+
+	for _, tt := range cases {
+		path := writeTempFile(t, tt.file, tt.content)
+
+		var v settings
+		require.NoError(t, Load(&v, append(tt.loaders, WithConfig(func(c *Config) {
+			c.Args, c.Envs = []string{"--config", path}, []string{}
+		}))...), tt.file)
+		assert.NotEmpty(t, v.Name, tt.file)
+	}
+}
