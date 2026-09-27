@@ -197,7 +197,6 @@ func parseConfigPath(l *loader) *parserFunc {
 		flags.SetOutput(io.Discard)
 		flags.ParseErrorsAllowlist.UnknownFlags = true
 
-		var path string
 		for elem, err := range ReflectFieldsOf(val, ReflectOptions{CanSet: True()}) {
 			if err != nil {
 				return fmt.Errorf("(config-path) could not fetch config flag: %w", err)
@@ -211,11 +210,7 @@ func parseConfigPath(l *loader) *parserFunc {
 				return fmt.Errorf("(config-path) expect string, got %q", elem.Value.Kind())
 			}
 
-			if opts.FlagShortName != "" && opts.FlagShortName != "-" {
-				flags.StringVarP(&l.config, opts.FlagFullName, opts.FlagShortName, path, opts.FieldUsage)
-			} else {
-				flags.StringVar(&l.config, opts.FlagFullName, path, opts.FieldUsage)
-			}
+			flags.StringVarP(&l.config, opts.FlagFullName, opts.shorthand(), "", opts.FieldUsage)
 		}
 
 		if err := flags.Parse(l.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {
@@ -300,12 +295,7 @@ func containsMarker(val any, marker reflect.Type) bool {
 //
 //nolint:gocyclo,funlen // one line per type pflag supports
 func prepareFlag(flagSet *pflag.FlagSet, field reflect.Value, info TagOptions) error {
-	name, usage := info.FlagFullName, info.FieldUsage
-
-	short := info.FlagShortName
-	if short == "-" {
-		short = ""
-	}
+	name, short, usage := info.FlagFullName, info.shorthand(), info.FieldUsage
 
 	switch p := field.Addr().Interface().(type) {
 	case *bool:

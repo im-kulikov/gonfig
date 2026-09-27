@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// ErrEnvSetterBreak is a predefined constant of type Error
-// used to indicate an error or a condition where processing should stop.
-const ErrEnvSetterBreak = Error("break")
+// errValueSet tells applyDefault that tryCustomTypes has set the value: the plain
+// parser must not parse it again.
+const errValueSet = Error("value set")
 
 // defaultTagName defines the struct tag key used to specify default values for struct fields.
 // When parsing struct tags, this key indicates the default value to be used if no value is provided
@@ -96,7 +96,7 @@ func parseDefault(t reflect.Type, item string) (reflect.Value, error) {
 
 // applyDefault sets the value of a `default` tag to an empty field.
 func applyDefault(field reflect.Value, value string) error {
-	if err := tryCustomTypes(field, value); errors.Is(err, ErrEnvSetterBreak) {
+	if err := tryCustomTypes(field, value); errors.Is(err, errValueSet) {
 		return nil
 	} else if err != nil {
 		return err
@@ -125,19 +125,19 @@ func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
 // tryCustomTypes attempts to set the value of a `reflect.Value` field based on its type.
 // It handles encoding.TextUnmarshaler (net.IP, slog.Level, ...), time.Duration, net.IPMask and net.IPNet.
 // If the value is not empty and the field is not yet set (IsZero), it processes the value.
-func tryCustomTypes(field reflect.Value, value any) error {
+func tryCustomTypes(field reflect.Value, value string) error {
 	// If the value is empty or the field already has a value, return early with no error.
 	if value == "" || !field.IsZero() {
 		return nil
 	}
 
 	if setter, ok := getTextUnmarshaler(field); ok {
-		if err := setter.UnmarshalText([]byte(value.(string))); err != nil {
+		if err := setter.UnmarshalText([]byte(value)); err != nil {
 			return err
 		}
 
 		// Done: a value parsed to zero (slog.LevelInfo) must not be parsed again as a plain type.
-		return ErrEnvSetterBreak
+		return errValueSet
 	}
 
 	// Switch on the underlying type of the field and handle specific custom types.
@@ -147,7 +147,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		return nil
 	case time.Duration:
 		// If the field is time.Duration, parse the value as a duration string.
-		val, err := time.ParseDuration(value.(string))
+		val, err := time.ParseDuration(value)
 		if err != nil {
 			return err // Return error if parsing fails.
 		}
@@ -155,7 +155,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		field.Set(reflect.ValueOf(val))
 	case net.IPMask:
 		// A prefix length, "/24" or "24": up to 32 an IPv4 mask, up to 128 an IPv6 one.
-		prefix, err := strconv.Atoi(strings.TrimPrefix(value.(string), "/"))
+		prefix, err := strconv.Atoi(strings.TrimPrefix(value, "/"))
 		if err != nil {
 			return err
 		}
@@ -173,7 +173,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		field.Set(reflect.ValueOf(mask))
 	case net.IPNet:
 		// If the field is net.IPNet, parse the value as a CIDR notation string.
-		_, val, err := net.ParseCIDR(value.(string))
+		_, val, err := net.ParseCIDR(value)
 		if err != nil {
 			return err // Return error if parsing fails.
 		}
@@ -181,8 +181,8 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		field.Set(reflect.ValueOf(*val))
 	}
 
-	// Return ErrEnvSetterBreak to indicate that the setter has finished processing.
-	return ErrEnvSetterBreak
+	// Return errValueSet to indicate that the setter has finished processing.
+	return errValueSet
 }
 
 // setDefaultValue parses and sets the default value to the provided struct field.

@@ -334,7 +334,7 @@ func (l *loader) setLoaderDefaults() {
 	}
 
 	if l.Args == nil {
-		l.Args = os.Args[1:]
+		l.Args = os.Args[min(1, len(os.Args)):] // os.Args may be empty in an embedded runtime
 	}
 
 	builtins := []struct {

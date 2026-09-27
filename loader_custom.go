@@ -24,20 +24,6 @@ type LoaderValidator interface {
 	Validate() error
 }
 
-// ParserPreparer is an interface for preparing a parser before parsing.
-// Implementations of this interface are expected to modify or adjust the provided
-// `Config` object before it is used in the parsing process. This can include tasks
-// such as setting default values, validating settings, or modifying parser behavior
-// based on the given configuration.
-//
-// This interface is useful when you need a preprocessing step before applying a parser.
-//
-// Method:
-// - Prepare(Config): Accepts a `Config` object and modifies it as needed before parsing.
-type ParserPreparer interface {
-	Prepare(Config)
-}
-
 // ParserConfigSetter defines an interface for setting the configuration file path.
 // Implementing types are expected to provide a method to set the path where
 // the configuration file for the parser is located.

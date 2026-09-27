@@ -73,6 +73,15 @@ const (
 // (flag defaults, environment variables) and in exported configs.
 const SecretTag = "secret"
 
+// shorthand is the one-letter flag, or "" without one: `short:-` means none.
+func (o TagOptions) shorthand() string {
+	if o.FlagShortName == "-" {
+		return ""
+	}
+
+	return o.FlagShortName
+}
+
 // isTrue reports whether a boolean tag such as `required:"true"` is set.
 func isTrue(tag reflect.StructTag, key string) bool { return tag.Get(key) == "true" }
 

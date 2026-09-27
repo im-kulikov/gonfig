@@ -52,9 +52,8 @@ const (
 	// Example usage: `env:"DB_HOST"`.
 	envTag = "env"
 
-	// ErrTestExit is an error indicating that a test process should exit.
-	// This error can be used in testing scenarios where an explicit termination
-	// or exit condition needs to be simulated.
+	// ErrTestExit is returned by Load after --help or --print-config when the exit
+	// function set by WithCustomExit returns instead of ending the process, as in tests.
 	ErrTestExit = Error("exit code")
 
 	// ErrPrepareDecoder is returned when the decoder initialization fails.
