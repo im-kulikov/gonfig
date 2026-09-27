@@ -24,7 +24,13 @@ const (
 	FlagSetName = "flags"
 )
 
-var markerType = reflect.TypeFor[DefaultConfigMarker]()
+var (
+	markerType      = reflect.TypeFor[DefaultConfigMarker]()
+	printMarkerType = reflect.TypeFor[PrintConfigMarker]()
+)
+
+// printConfigFlag is the name of the flag enabled by PrintConfigFlag.
+const printConfigFlag = "print-config"
 
 // DefaultConfigMarker is an interface used to identify structures that
 // provide default configuration flag support.
@@ -39,6 +45,23 @@ type DefaultConfigFlag struct{}
 // IsDefaultConfig is a marker method that satisfies the DefaultConfigMarker interface.
 func (DefaultConfigFlag) IsDefaultConfig() {}
 
+// PrintConfigMarker is an interface used to identify structures that
+// provide the --print-config flag.
+type PrintConfigMarker interface {
+	IsPrintConfig()
+}
+
+// PrintConfigFlag is a zero-size structure that can be embedded into configuration
+// structures to enable the --print-config[=yaml|json|toml|env] flag. With it the
+// loader writes the loaded configuration with Write (secrets left empty) and exits
+// with code 0, like --help. It runs before required fields are checked, so it also
+// prints a template of the configuration. Without a value the format is the one of
+// the file loader, or YAML without one.
+type PrintConfigFlag struct{}
+
+// IsPrintConfig is a marker method that satisfies the PrintConfigMarker interface.
+func (PrintConfigFlag) IsPrintConfig() {}
+
 // newFlagsLoader creates a new parser that loads configuration from command-line flags.
 // It uses the provided arguments to populate the configuration by preparing and parsing the flags.
 // Returns a Parser that processes command-line flags.
@@ -51,6 +74,16 @@ func newFlagsLoader(l *loader) *parserFunc {
 
 		if err := PrepareFlags(set, val); err != nil {
 			return err
+		}
+
+		if containsMarker(val, printMarkerType) {
+			if set.Lookup(printConfigFlag) != nil {
+				return fmt.Errorf("(flags) flag --%s is defined by both a field and PrintConfigFlag", printConfigFlag)
+			}
+
+			set.StringVar(&l.printConfig, printConfigFlag, "",
+				"print the loaded config in `format` (yaml, json, toml or env) without secrets and exit")
+			set.Lookup(printConfigFlag).NoOptDefVal = string(l.fileFormat())
 		}
 
 		set.SetOutput(l.buffer)
@@ -190,10 +223,15 @@ func parseDefaultConfigPath(l *loader, call func(val any) error) func(any) error
 }
 
 // containsDefaultConfigFlag checks if the provided value or any of its embedded fields
-// satisfy the DefaultConfigMarker interface. It uses type assertion for a fast path
-// and falls back to recursive reflection for nested or pointer embeddings.
+// satisfy the DefaultConfigMarker interface.
 func containsDefaultConfigFlag(val any) bool {
-	if _, ok := val.(DefaultConfigMarker); ok {
+	return containsMarker(val, markerType)
+}
+
+// containsMarker checks if the provided value or any of its embedded fields implement
+// the marker interface, recursing through nested and pointer embeddings.
+func containsMarker(val any, marker reflect.Type) bool {
+	if val != nil && reflect.TypeOf(val).Implements(marker) {
 		return true
 	}
 
@@ -211,7 +249,7 @@ func containsDefaultConfigFlag(val any) bool {
 	}
 
 	for f := range t.Fields() {
-		if f.Type.Implements(markerType) || reflect.PointerTo(f.Type).Implements(markerType) {
+		if f.Type.Implements(marker) || reflect.PointerTo(f.Type).Implements(marker) {
 			return true
 		}
 
@@ -220,7 +258,7 @@ func containsDefaultConfigFlag(val any) bool {
 			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
-			if ft.Kind() == reflect.Struct && containsDefaultConfigFlag(reflect.New(ft).Interface()) {
+			if ft.Kind() == reflect.Struct && containsMarker(reflect.New(ft).Interface(), marker) {
 				return true
 			}
 		}
