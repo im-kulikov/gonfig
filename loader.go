@@ -295,7 +295,8 @@ func WithStrict() LoaderOption {
 // - You want to provide fallback values for missing configurations.
 // - You need to ensure a structure is always initialized with meaningful defaults.
 //
-// For example, you can set `path.to.key=value`, to unmarshal it for struct{Path struct {To struct{Key string}}}
+// Nested structs take nested maps: {"path": {"to": {"key": value}}} for struct{Path struct{To struct{Key string}}},
+// keyed by the given tag. Dotted keys such as "path.to.key" are not supported.
 //
 // Parameters:
 // - keyTag: allows using struct-tag to find field names.
