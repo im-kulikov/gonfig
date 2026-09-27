@@ -25,6 +25,10 @@ type ReflectOptions struct {
 	CanInterface *bool // Only include fields that can be interfaced (exposed as an interface{}).
 
 	AsField []reflect.Type
+
+	// Pointers makes the walk go into a non-nil pointer to a struct, a section set by
+	// the code or a source, as into a nested struct. A nil pointer is a field.
+	Pointers bool
 }
 
 // TagOptions represents the configuration options for processing struct tags and flags.
@@ -258,7 +262,11 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 				}
 
 				child := &ReflectValue{Value: fv, Field: elem.Value.Type().Field(i), Owner: elem}
-				if !options.IsField(fv) { // a nested struct
+				if options.section(fv) {
+					child.Value = fv.Elem()
+				}
+
+				if !options.IsField(child.Value) { // a nested struct
 					if !walk(child) {
 						return false
 					}
@@ -277,4 +285,9 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 
 		walk(&ReflectValue{Value: v.Elem()})
 	}
+}
+
+// section reports whether v is a non-nil pointer to a struct the walk goes into.
+func (o *ReflectOptions) section(v reflect.Value) bool {
+	return o.Pointers && v.Kind() == reflect.Pointer && !v.IsNil() && v.Elem().Kind() == reflect.Struct
 }
