@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"testing/fstest"
 	"time"
 
 	"github.com/im-kulikov/gonfig"
@@ -240,4 +241,24 @@ func ExampleLoaderValidator() {
 	// Output:
 	// port 80 is privileged
 	// <nil>
+}
+
+// A config from an fs.FS: an embed.FS with a config built into the binary,
+// or a fstest.MapFS, as here.
+func ExampleFromFS() {
+	type Config struct {
+		gonfig.DefaultConfigFlag
+
+		Port int `yaml:"port"`
+	}
+
+	configs := fstest.MapFS{"configs/app.yaml": {Data: []byte("port: 9090\n")}}
+
+	var cfg Config
+	err := gonfig.Load(&cfg,
+		gonfig.WithYAMLLoader(gonfig.FromFS(configs)),
+		source([]string{"--config", "configs/app.yaml"}))
+
+	fmt.Println(cfg.Port, err)
+	// Output: 9090 <nil>
 }

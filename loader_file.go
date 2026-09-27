@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sync/atomic"
 
@@ -48,7 +50,17 @@ type fileOpener func(string) (io.ReadCloser, error)
 
 type fileLoaderOptions struct{ open fileOpener }
 
-type fileLoaderOption func(*fileLoaderOptions)
+// FileOption configures a file loader: WithYAMLLoader(FromFS(configs)).
+type FileOption func(*fileLoaderOptions)
+
+// FromFS makes a file loader read the config path from fsys, such as an embed.FS with
+// a config built into the binary, or a fstest.MapFS in tests. The path is a path in
+// fsys: slash-separated and unrooted, a leading "./" is dropped (configs/app.yaml).
+func FromFS(fsys fs.FS) FileOption {
+	return func(o *fileLoaderOptions) {
+		o.open = func(name string) (io.ReadCloser, error) { return fsys.Open(path.Clean(name)) }
+	}
+}
 
 // fileFormat describes how a file loader reads its format: parse turns the file
 // into a generic map, tag names the struct tag that maps its keys to fields, and
@@ -68,24 +80,24 @@ var fileFormats = map[ParserType]fileFormat{
 
 // WithJSONLoader returns a LoaderOption that enables JSON configuration parsing.
 // It registers a JSON parser initializer using WithCustomParserInit.
-func WithJSONLoader(options ...fileLoaderOption) LoaderOption {
+func WithJSONLoader(options ...FileOption) LoaderOption {
 	return WithCustomParserInit(initFileLoader(ParserJSON, options))
 }
 
 // WithYAMLLoader returns a LoaderOption that enables YAML configuration parsing.
 // It registers a YAML parser initializer using WithCustomParserInit.
-func WithYAMLLoader(options ...fileLoaderOption) LoaderOption {
+func WithYAMLLoader(options ...FileOption) LoaderOption {
 	return WithCustomParserInit(initFileLoader(ParserYAML, options))
 }
 
 // WithTOMLLoader returns a LoaderOption that enables TOML configuration parsing.
-func WithTOMLLoader(options ...fileLoaderOption) LoaderOption {
+func WithTOMLLoader(options ...FileOption) LoaderOption {
 	return WithCustomParserInit(initFileLoader(ParserTOML, options))
 }
 
 // initFileLoader initializes a file parser of the given kind. The path to the
 // file is set later through SetConfigPath; without a path the parser does nothing.
-func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) (Parser, error) {
+func initFileLoader(kind ParserType, options []FileOption) func(_ Config) (Parser, error) {
 	settings := &fileLoaderOptions{open: func(filename string) (io.ReadCloser, error) {
 		filename = filepath.Clean(filename)
 
