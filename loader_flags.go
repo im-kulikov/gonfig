@@ -22,6 +22,10 @@ const (
 	FlagTagUsage = "usage"
 	// FlagSetName is a name of the flag set for the command-line interface.
 	FlagSetName = "flags"
+
+	// ErrFlagRedefined is returned when two fields, or a field and DefaultConfigFlag
+	// or PrintConfigFlag, define the same flag or shorthand.
+	ErrFlagRedefined Error = "flag redefined"
 )
 
 var (
@@ -78,7 +82,7 @@ func newFlagsLoader(l *loader) *parserFunc {
 
 		if containsMarker(val, printMarkerType) {
 			if set.Lookup(printConfigFlag) != nil {
-				return fmt.Errorf("(flags) flag --%s is defined by both a field and PrintConfigFlag", printConfigFlag)
+				return fmt.Errorf("(flags) %w: --%s, by PrintConfigFlag and a field", ErrFlagRedefined, printConfigFlag)
 			}
 
 			set.StringVar(&l.printConfig, printConfigFlag, "",
@@ -110,6 +114,15 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 
 		if len(options.FlagShortName) > 1 {
 			return fmt.Errorf("(flags) shorthand is more than one ASCII character %q", options.FlagShortName)
+		}
+
+		// pflag panics on a redefined flag; report the field instead.
+		if flagSet.Lookup(options.FlagFullName) != nil {
+			return fmt.Errorf("(flags) field %s: %w: --%s", elem.Field.Name, ErrFlagRedefined, options.FlagFullName)
+		}
+
+		if short := options.FlagShortName; short != "" && short != "-" && flagSet.ShorthandLookup(short) != nil {
+			return fmt.Errorf("(flags) field %s: %w: -%s", elem.Field.Name, ErrFlagRedefined, short)
 		}
 
 		if err = prepareFlag(flagSet, elem.Value, options); err != nil {
