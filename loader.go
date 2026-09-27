@@ -412,27 +412,24 @@ func WithDefaults(keyTag string, defaults map[string]any) LoaderOption {
 	}
 }
 
-// setLoaderDefaults initializes a loader with default values based on the provided configuration.
-// It sets up the environment variables, command-line arguments, and the order in which parsers
-// will be applied, ensuring defaults are in place if not explicitly provided in the Config.
-//
-// The function performs the following tasks:
-//   - If no environment variables are provided in the Config, it defaults to using `os.Environ()`.
-//   - If no arguments are provided in the Config, it defaults to `os.Args[1:]`.
-//   - If no loader order is defined, it sets a default order:
-//     Defaults -> Config Path -> File -> Env -> Flags.
-//   - Initializes a map of parsers (`parsers`), based on the Config options such as SkipDefaults,
-//     SkipEnv, and SkipFlags, to include or exclude certain parsers.
-//
-// Parameters:
-//   - c: The Config object that contains user-provided settings for environment variables, arguments,
-//     and parser control options.
-//
-// Returns:
-// - A pointer to a `loader` struct, which contains the updated Config and the map of available parsers.
-func setLoaderDefaults(c Config) *loader {
-	l := &loader{Config: c, exit: os.Exit, buffer: os.Stdout, groups: make(map[ParserType]Parser, 4)}
+// newLoader returns the state of one Load. Every Load gets its own, so one Parser
+// can be used from several goroutines, and a Load does not see the config path
+// or parsers of the previous one.
+func newLoader(c Config, output any) *loader {
+	return &loader{
+		Config: c,
+		output: output,
+		exit:   os.Exit,
+		buffer: os.Stdout,
+		groups: make(map[ParserType]Parser, 4),
+	}
+}
 
+// setLoaderDefaults fills what the options left unset: Envs and Args of the process,
+// and the built-in parsers that Config.Skip* does not disable and a custom parser
+// of the same type does not replace. It runs after the options, so the settings
+// changed through WithConfig apply.
+func (l *loader) setLoaderDefaults() {
 	if l.Envs == nil {
 		l.Envs = os.Environ()
 	}
@@ -441,50 +438,40 @@ func setLoaderDefaults(c Config) *loader {
 		l.Args = os.Args[1:]
 	}
 
-	if !l.SkipDefaults {
-		l.groups[ParserDefaults] = newDefaultParser()
+	builtins := []struct {
+		skip   bool
+		parser Parser
+	}{
+		{l.SkipDefaults, newDefaultParser()},
+		{l.SkipFlags, parseConfigPath(l)},
+		{l.SkipEnv, newEnvLoader(l)},
+		{l.SkipFlags, newFlagsLoader(l)},
 	}
 
-	if !l.SkipEnv {
-		l.groups[ParserEnv] = newEnvLoader(l)
+	for _, builtin := range builtins {
+		if _, replaced := l.groups[builtin.parser.Type()]; !replaced && !builtin.skip {
+			l.groups[builtin.parser.Type()] = builtin.parser
+		}
 	}
-
-	if !l.SkipFlags {
-		l.groups[ParserFlags] = newFlagsLoader(l)
-		l.groups[ParserConfigSet] = parseConfigPath(l)
-	}
-
-	return l
 }
 
-// New creates a new Parser based on the provided configuration and optional LoaderOptions.
-// The function initializes a loader service (`svc`) with default settings from the provided
-// configuration. Then it applies each LoaderOption to customize the service if any are provided.
+// New creates a Parser. Every Load applies the options to a fresh loader, then runs
+// the parsers in the order of priority, each overriding the previous ones:
 //
-// The function returns a `parserFunc` that, when called, will:
-// - Apply all the LoaderOptions to the `svc`.
-// - Iterate through the `LoaderOrder` and invoke the corresponding group parsers.
-// If any parser fails or if a group parser is missing, the function returns an error.
+//  1. defaults from `default` tags;
+//  2. the config path, pre-scanned from the flags;
+//  3. custom parsers, such as file loaders, in the order they were added;
+//  4. environment variables;
+//  5. flags.
 //
-// Parameters:
-// - config: The Config object used to initialize the default settings for the loader.
-// - options: A variadic number of LoaderOption functions to customize the loader.
-//
-// Returns:
-// - A Parser that can be used to load and parse values into the provided target structure.
+// Parsers disabled by Config.Skip* are left out. Then --print-config is handled,
+// required fields are checked and Validate is called if v implements LoaderValidator.
+// The Parser can be used from several goroutines.
 //
 // nolint:ireturn
 func New(config Config, options ...LoaderOption) Parser {
-	l := setLoaderDefaults(config)
-
-	// return a group parser with the following loading priority:
-	// 1. Defaults
-	// 2. Config path (pre-scan)
-	// 3. Custom orders (e.g., file loaders)
-	// 4. Envs (overrides file)
-	// 5. Flags (the highest priority)
-	return &parserFunc{call: wrapUsageLoader(l, func(v any) error {
-		l.output = v
+	return &parserFunc{call: func(v any) error {
+		l := newLoader(config, v)
 
 		for _, option := range options {
 			if err := option(l); err != nil {
@@ -492,55 +479,47 @@ func New(config Config, options ...LoaderOption) Parser {
 			}
 		}
 
-		order := make([]ParserType, 0, len(l.groups)+4)
+		l.setLoaderDefaults()
 
-		if !config.SkipDefaults { // 1. set defaults
-			order = append(order, ParserDefaults)
+		return wrapUsageLoader(l, l.load)(v)
+	}}
+}
+
+func (l *loader) load(v any) error {
+	order := slices.Concat([]ParserType{ParserDefaults, ParserConfigSet}, l.orders, []ParserType{ParserEnv, ParserFlags})
+
+	for _, typ := range order {
+		parser, ok := l.groups[typ]
+		if !ok { // disabled by Config.Skip*
+			continue
 		}
 
-		if !config.SkipFlags { // 2. set config path flag (pre-scan)
-			order = append(order, ParserConfigSet)
+		if setter, ok := parser.(ParserConfigSetter); ok {
+			setter.SetConfigPath(l.config)
 		}
 
-		// 3. set custom loaders (e.g., file loaders like JSON/YAML/TOML)
-		order = append(order, l.orders...)
-
-		if !config.SkipEnv { // 4. set envs (overrides file)
-			order = append(order, ParserEnv)
+		if setter, ok := parser.(strictSetter); ok {
+			setter.setStrict(l.Strict)
 		}
 
-		if !config.SkipFlags { // 5. set final flags (the highest priority)
-			order = append(order, ParserFlags)
+		if err := parser.Load(v); err != nil {
+			return fmt.Errorf("gonfig: could not load: %w", err)
 		}
+	}
 
-		for _, typ := range order {
-			if setter, ok := l.groups[typ].(ParserConfigSetter); ok {
-				setter.SetConfigPath(l.config)
-			}
+	if l.printConfig != "" {
+		return l.print(v)
+	}
 
-			if setter, ok := l.groups[typ].(strictSetter); ok {
-				setter.setStrict(l.Strict)
-			}
+	if err := ValidateRequiredFields(v); err != nil {
+		return err
+	}
 
-			if err := l.groups[typ].Load(v); err != nil {
-				return fmt.Errorf("gonfig: could not load: %w", err)
-			}
-		}
+	if validator, ok := v.(LoaderValidator); ok {
+		return validator.Validate()
+	}
 
-		if l.printConfig != "" {
-			return l.print(v)
-		}
-
-		if err := ValidateRequiredFields(v); err != nil {
-			return err
-		}
-
-		if validator, ok := v.(LoaderValidator); ok {
-			return validator.Validate()
-		}
-
-		return nil
-	})}
+	return nil
 }
 
 // print writes the loaded config for --print-config and exits, like --help does.
