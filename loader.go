@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -394,7 +395,7 @@ func (l *loader) load(v any) error {
 		}
 
 		if setter, ok := parser.(ParserConfigSetter); ok {
-			setter.SetConfigPath(l.config)
+			setter.SetConfigPath(l.configPathFor(typ))
 		}
 
 		if setter, ok := parser.(strictSetter); ok {
@@ -426,6 +427,34 @@ func (l *loader) print(v any) error {
 	l.exit(0)
 
 	return ErrTestExit
+}
+
+// configPathFor returns the config path for the parser of the given type. Of several
+// file loaders only one reads the file: the one of its extension, or the first file
+// loader when none has it. Other parsers, custom ones included, get the path as is.
+func (l *loader) configPathFor(typ ParserType) string {
+	if _, isFile := fileFormats[typ]; !isFile {
+		return l.config
+	}
+
+	ext := strings.ToLower(filepath.Ext(l.config))
+
+	var reader ParserType
+	for _, other := range l.orders {
+		if format, ok := fileFormats[other]; ok && slices.Contains(format.extensions, ext) {
+			reader = other
+
+			break
+		} else if ok && reader == "" {
+			reader = other // the first file loader, unless one has the extension
+		}
+	}
+
+	if typ != reader {
+		return ""
+	}
+
+	return l.config
 }
 
 // fileFormat is the format of the first file loader, or YAML without one.

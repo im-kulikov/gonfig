@@ -120,7 +120,8 @@ type Config struct {
 ## Config files
 
 `WithYAMLLoader()`, `WithJSONLoader()` or `WithTOMLLoader()` read the file at the config path; without a
-path nothing is read. Use one of them: every file loader reads the same path.
+path nothing is read. With several of them the file goes to the loader of its extension (`.yaml`, `.yml`,
+`.json`, `.toml`), or to the first one added for any other name, so `--config app.conf` works too.
 
 ```go
 type Config struct {

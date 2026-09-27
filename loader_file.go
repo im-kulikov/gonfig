@@ -51,17 +51,19 @@ type fileLoaderOptions struct{ open fileOpener }
 type fileLoaderOption func(*fileLoaderOptions)
 
 // fileFormat describes how a file loader reads its format: parse turns the file
-// into a generic map, tag names the struct tag that maps its keys to fields.
+// into a generic map, tag names the struct tag that maps its keys to fields, and
+// extensions are the file names it reads when several file loaders are added.
 type fileFormat struct {
-	tag   string
-	parse func(data []byte, tree any) error
+	tag        string
+	parse      func(data []byte, tree any) error
+	extensions []string
 }
 
 // fileFormats are the supported file loaders.
 var fileFormats = map[ParserType]fileFormat{
-	ParserJSON: {tag: "json", parse: parseJSON},
-	ParserYAML: {tag: "yaml", parse: yaml.Unmarshal},
-	ParserTOML: {tag: "toml", parse: toml.Unmarshal},
+	ParserJSON: {tag: "json", parse: parseJSON, extensions: []string{".json"}},
+	ParserYAML: {tag: "yaml", parse: yaml.Unmarshal, extensions: []string{".yaml", ".yml"}},
+	ParserTOML: {tag: "toml", parse: toml.Unmarshal, extensions: []string{".toml"}},
 }
 
 // WithJSONLoader returns a LoaderOption that enables JSON configuration parsing.
