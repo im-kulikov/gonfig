@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"errors"
+	"log/slog"
 	"net"
 	"reflect"
 	"strconv"
@@ -246,4 +247,16 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		require.EqualError(t, SetDefaults(struct{}{}), "(defaults) expect pointer, got \"struct\"")
 		require.EqualError(t, SetDefaults(new(int)), "(defaults) expect struct field, got \"int\"")
 	})
+}
+
+// H-01: a TextUnmarshaler default that parses to the zero value was parsed a second time as a plain type.
+func TestSetDefaults_TextUnmarshalerZeroValue(t *testing.T) {
+	var v struct {
+		Level slog.Level `default:"INFO"` // slog.LevelInfo == 0
+		Time  time.Time  `default:"0001-01-01T00:00:00Z"`
+	}
+
+	require.NoError(t, SetDefaults(&v))
+	require.Equal(t, slog.LevelInfo, v.Level)
+	require.True(t, v.Time.IsZero())
 }

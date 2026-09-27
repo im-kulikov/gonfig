@@ -88,7 +88,12 @@ func tryCustomTypes(field reflect.Value, value any) error {
 	}
 
 	if setter, ok := getTextUnmarshaler(field); ok {
-		return setter.UnmarshalText([]byte(value.(string)))
+		if err := setter.UnmarshalText([]byte(value.(string))); err != nil {
+			return err
+		}
+
+		// Done: a value parsed to zero (slog.LevelInfo) must not be parsed again as a plain type.
+		return ErrEnvSetterBreak
 	}
 
 	// Switch on the underlying type of the field and handle specific custom types.
