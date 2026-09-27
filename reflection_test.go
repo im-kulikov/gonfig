@@ -33,10 +33,6 @@ type reflectNestedStruct struct {
 	AnotherField int
 }
 
-func TestPtr(t *testing.T) {
-	assert.Equal(t, 42, *Ptr(42))
-}
-
 func TestReflectFieldsOf(t *testing.T) {
 	t.Run("non-pointer", func(t *testing.T) {
 		for _, err := range ReflectFieldsOf(ReflectStruct{}, ReflectOptions{}) {
@@ -55,11 +51,11 @@ func TestReflectFieldsOf(t *testing.T) {
 			Count   int
 			Options ReflectOptions
 		}{
-			{Count: 4, Options: ReflectOptions{CanSet: True()}},
-			{Count: 6, Options: ReflectOptions{CanAddr: True()}},
-			{Count: 4, Options: ReflectOptions{CanInterface: True()}},
-			{Count: 0, Options: ReflectOptions{CanSet: True(), CanAddr: False()}},
-			{Count: 0, Options: ReflectOptions{CanSet: True(), CanInterface: False()}},
+			{Count: 4, Options: ReflectOptions{CanSet: new(true)}},
+			{Count: 6, Options: ReflectOptions{CanAddr: new(true)}},
+			{Count: 4, Options: ReflectOptions{CanInterface: new(true)}},
+			{Count: 0, Options: ReflectOptions{CanSet: new(true), CanAddr: new(false)}},
+			{Count: 0, Options: ReflectOptions{CanSet: new(true), CanInterface: new(false)}},
 		}
 
 		for i, tt := range cases {
