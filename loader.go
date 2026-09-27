@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -218,15 +219,30 @@ func (e singleLine) Unwrap() error { return e.error }
 // This will ensure that `myParser` is used by the loader to process configuration data.
 func WithCustomParser(p Parser) LoaderOption {
 	return func(l *loader) error {
-		if p == nil {
-			return nil
+		if p != nil {
+			l.addParser(p)
 		}
-
-		l.groups[p.Type()] = p
-		l.orders = append(l.orders, p.Type())
 
 		return nil
 	}
+}
+
+// addParser registers a parser. A parser of a built-in type (defaults, env, flags,
+// config-setter) replaces the built-in one at its step. Any other type runs after
+// the config path is known and before env, once per Load: registering the same
+// type again replaces the parser.
+func (l *loader) addParser(p Parser) {
+	typ := p.Type()
+
+	switch typ {
+	case ParserDefaults, ParserEnv, ParserFlags, ParserConfigSet:
+	default:
+		if !slices.Contains(l.orders, typ) {
+			l.orders = append(l.orders, typ)
+		}
+	}
+
+	l.groups[typ] = p
 }
 
 // WithCustomParserInit allows the injection of a custom parser into the loader by using a provided
@@ -250,14 +266,11 @@ func WithCustomParserInit(fabric ParserInit) LoaderOption {
 		switch parser, err := fabric(l.Config); {
 		case err != nil:
 			return err
-		case parser == nil:
-			return nil
-		default:
-			l.groups[parser.Type()] = parser
-			l.orders = append(l.orders, parser.Type())
-
-			return nil
+		case parser != nil:
+			l.addParser(parser)
 		}
+
+		return nil
 	}
 }
 
