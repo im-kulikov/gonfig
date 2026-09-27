@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"reflect"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -337,4 +339,14 @@ func TestUsageOfEnvs_Nested(t *testing.T) {
 		require.Contains(t, usage, "- 'FIELD' <string>")
 		require.NotContains(t, usage, "- '_FIELD'")
 	})
+}
+
+// M-13: env uses TextUnmarshaler, like defaults and files.
+func TestLoadEnvs_TextUnmarshaler(t *testing.T) {
+	var config struct {
+		Level slog.Level `env:"LEVEL"`
+	}
+
+	require.NoError(t, LoadEnvs(map[string]any{"LEVEL": "WARN"}, &config))
+	assert.Equal(t, slog.LevelWarn, config.Level)
 }

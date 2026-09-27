@@ -1,11 +1,13 @@
 package gonfig
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -282,17 +284,19 @@ func insertIntoMap(m map[string]any, keys []string, value any) {
 	}
 }
 
-// decodeEnv converts the provided data into the target type using type-specific parsing.
-// It supports basic types, time.Duration, and IP-related types. It returns the parsed value
-// or an error if the conversion fails.
+// decodeHooks converts the provided data into the target type using type-specific parsing.
+// It supports basic types, time.Duration, IP-related types and encoding.TextUnmarshaler.
+// It returns the parsed value or an error if the conversion fails.
 //
 // nolint:ireturn
-func decodeEnv() mapstructure.DecodeHookFunc {
+func decodeHooks() mapstructure.DecodeHookFunc {
 	decoders := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToBasicTypeHookFunc())
 
 	return mapstructure.ComposeDecodeHookFunc(
+		jsonNumberHook,
+		mapstructure.TextUnmarshallerHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToBasicTypeHookFunc(),
@@ -344,18 +348,49 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 		})
 }
 
+// Tag options that inline a named struct field into its parent: `env:",squash"`
+// for environment variables, `yaml:",inline"` (and json/toml alike) for files.
+// Embedded structs are inlined without any option.
+const (
+	envInlineOption  = "squash"
+	fileInlineOption = "inline"
+)
+
+// decodeOptions describe how a generic map is decoded into a struct.
+type decodeOptions struct {
+	tag      string // struct tag with the key names
+	inline   string // tag option that inlines a named struct field
+	untagged bool   // match fields without the tag by their name (files); env skips them
+}
+
 func decodeMapToStruct(dest any, from map[string]any, tag string) error {
+	return decodeMap(dest, from, decodeOptions{tag: tag, inline: envInlineOption})
+}
+
+// decodeMap is the single decoder behind environment variables, files and
+// WithDefaults, so all of them treat embedding and value types the same way.
+func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 	conf := &mapstructure.DecoderConfig{
 		Result:               dest,
-		TagName:              tag,
+		TagName:              options.tag,
 		Squash:               true,
-		SquashTagOption:      "squash",
-		IgnoreUntaggedFields: true,
-		DecodeHook:           decodeEnv()}
-	if dec, err := mapstructure.NewDecoder(conf); err != nil {
-		return errors.Join(ErrPrepareDecoder, err)
-	} else if err = dec.Decode(from); err != nil {
-		return errors.Join(ErrDecode, err)
+		SquashTagOption:      options.inline,
+		IgnoreUntaggedFields: !options.untagged,
+		DecodeHook:           decodeHooks(),
+	}
+
+	dec, err := mapstructure.NewDecoder(conf)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrPrepareDecoder, err)
+	}
+
+	if err = dec.Decode(from); err != nil {
+		// mapstructure prefixes the list of errors with a multi-line header.
+		if inner := errors.Unwrap(err); inner != nil {
+			err = inner
+		}
+
+		return fmt.Errorf("%w: %w", ErrDecode, singleLine{err})
 	}
 
 	return nil
@@ -366,4 +401,23 @@ func decodeMapToStruct(dest any, from map[string]any, tag string) error {
 // object based on the "env" tag. It returns an error if decoding fails.
 func LoadEnvs(envs map[string]any, dest any) error {
 	return decodeMapToStruct(dest, envs, envTag)
+}
+
+// jsonNumberHook turns json.Number from JSON files into a Go number before the
+// other hooks run: they expect a plain string or number and would misread it.
+func jsonNumberHook(_, _ reflect.Type, data any) (any, error) {
+	number, ok := data.(json.Number)
+	if !ok {
+		return data, nil
+	}
+
+	if v, err := number.Int64(); err == nil {
+		return v, nil
+	}
+
+	if v, err := strconv.ParseUint(number.String(), 10, 64); err == nil {
+		return v, nil
+	}
+
+	return number.Float64()
 }

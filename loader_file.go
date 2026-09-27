@@ -1,8 +1,10 @@
 package gonfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,6 +49,20 @@ type fileLoaderOptions struct{ open fileOpener }
 
 type fileLoaderOption func(*fileLoaderOptions)
 
+// fileFormat describes how a file loader reads its format: parse turns the file
+// into a generic map, tag names the struct tag that maps its keys to fields.
+type fileFormat struct {
+	tag   string
+	parse func(data []byte, tree any) error
+}
+
+// fileFormats are the supported file loaders.
+var fileFormats = map[ParserType]fileFormat{
+	ParserJSON: {tag: "json", parse: parseJSON},
+	ParserYAML: {tag: "yaml", parse: yaml.Unmarshal},
+	ParserTOML: {tag: "toml", parse: toml.Unmarshal},
+}
+
 // WithJSONLoader returns a LoaderOption that enables JSON configuration parsing.
 // It registers a JSON parser initializer using WithCustomParserInit.
 func WithJSONLoader(options ...fileLoaderOption) LoaderOption {
@@ -64,9 +80,8 @@ func WithTOMLLoader(options ...fileLoaderOption) LoaderOption {
 	return WithCustomParserInit(initFileLoader(ParserTOML, options))
 }
 
-// initFileLoader initializes a JSON parser with an atomic pointer for the configuration file path.
-//
-// It returns a Parser that uses jsonLoaderFunc for reading and decoding JSON files.
+// initFileLoader initializes a file parser of the given kind. The path to the
+// file is set later through SetConfigPath; without a path the parser does nothing.
 func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) (Parser, error) {
 	settings := &fileLoaderOptions{open: func(filename string) (io.ReadCloser, error) {
 		filename = filepath.Clean(filename)
@@ -87,42 +102,76 @@ func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) 
 			Parser: &parserFunc{
 				name: kind,
 				call: func(v any) error {
-					switch kind {
-					case ParserJSON:
-						return loadFromFile(&path, settings.open, func(r io.Reader) error {
-							return json.NewDecoder(r).Decode(v)
-						})
-					case ParserYAML:
-						return loadFromFile(&path, settings.open, func(r io.Reader) error {
-							return yaml.NewDecoder(r).Decode(v)
-						})
-					case ParserTOML:
-						return loadFromFile(&path, settings.open, func(r io.Reader) error {
-							return toml.NewDecoder(r).Decode(v)
-						})
-					default:
+					format, ok := fileFormats[kind]
+					if !ok {
 						return ErrUnknownFileTypeParser
 					}
+
+					return loadFromFile(&path, settings.open, func(r io.Reader) error {
+						return decodeFile(format, r, v)
+					})
 				},
 			},
 		}, nil
 	}
 }
 
-// SetConfigPath sets the path to the JSON configuration file.
+// SetConfigPath sets the path to the configuration file.
 func (y *fileLoader) SetConfigPath(filename string) {
 	y.path.Store(&filename)
 }
 
-func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.Reader) error) error {
-	if filename := path.Load(); filename == nil || *filename == "" {
+func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.Reader) error) (err error) {
+	filename := path.Load()
+	if filename == nil || *filename == "" {
 		return nil
-	} else if file, err := open(*filename); err != nil {
-		return errors.Join(ErrCantOpen, err)
-	} else if err = decode(file); err != nil {
-		return errors.Join(ErrCantParse, err)
-	} else if err = file.Close(); err != nil {
-		return errors.Join(ErrCantClose, err)
+	}
+
+	file, err := open(*filename)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrCantOpen, err)
+	}
+
+	defer func() {
+		// A close error matters only when reading succeeded; after a parse
+		// error the file is closed anyway and the parse error is the one to report.
+		if errClose := file.Close(); errClose != nil && err == nil {
+			err = fmt.Errorf("%w %s: %w", ErrCantClose, *filename, errClose)
+		}
+	}()
+
+	if err = decode(file); err != nil {
+		return fmt.Errorf("%w %s: %w", ErrCantParse, *filename, singleLine{err})
+	}
+
+	return nil
+}
+
+// decodeFile reads a file into a generic map and decodes it by the same rules as
+// environment variables: embedded structs are inlined, strings are converted by
+// the shared hooks (durations, IP networks, encoding.TextUnmarshaler).
+func decodeFile(format fileFormat, r io.Reader, dest any) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	var tree map[string]any
+	if err = format.parse(data, &tree); err != nil || len(tree) == 0 {
+		return err // an empty file or one with comments only changes nothing
+	}
+
+	return decodeMap(dest, tree, decodeOptions{tag: format.tag, inline: fileInlineOption, untagged: true})
+}
+
+// parseJSON keeps numbers as json.Number, so int64 values beyond 2^53 are not
+// rounded through float64, and treats an empty file as an empty object.
+func parseJSON(data []byte, tree any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+
+	if err := dec.Decode(tree); !errors.Is(err, io.EOF) {
+		return err
 	}
 
 	return nil
