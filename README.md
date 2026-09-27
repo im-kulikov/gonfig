@@ -195,7 +195,8 @@ type Config struct {
 ```
 
 Flags of `go test` (`-test.*`) are ignored. In tests set `Args` and `Envs` through `WithConfig`, so the
-result does not depend on how the tests are run.
+result does not depend on how the tests are run: a runner that passes `-test.run ^TestX$` as two
+arguments leaves the pattern as a positional argument. `Args: nil` means `os.Args`, use `[]string{}`.
 
 ## Defaults
 

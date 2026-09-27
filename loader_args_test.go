@@ -16,7 +16,9 @@ type argsConfig struct {
 func loadArgs(t *testing.T, v any, args ...string) error {
 	t.Helper()
 
-	return Load(v, WithConfig(func(c *Config) { c.Args, c.Envs = args, []string{} }))
+	// Not nil even without arguments: nil means os.Args, and a test runner that passes
+	// "-test.run ^TestArgs$" as two arguments leaves the pattern as a positional one.
+	return Load(v, WithConfig(func(c *Config) { c.Args, c.Envs = append([]string{}, args...), []string{} }))
 }
 
 // M-16: positional arguments were lost.
