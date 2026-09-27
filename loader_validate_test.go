@@ -47,7 +47,7 @@ type validRoot struct {
 	Backup struct {
 		DB validDB `env:"DB"`
 	} `env:"BACKUP"`
-	Pointer *validServer // pointers to structs are not walked yet (M-33)
+	Pointer *validServer // a section set by the code is validated too
 	hidden  validServer  // unexported: cannot be called
 }
 
@@ -65,16 +65,16 @@ func TestValidate_Nested(t *testing.T) {
 	calls := 0
 	v := validRoot{
 		validEmbedded: validEmbedded{calls: &calls},
-		Pointer:       &validServer{Port: 1}, // would fail if validated
-		hidden:        validServer{Port: 1},  // would fail if validated
+		Pointer:       &validServer{Port: 1},
+		hidden:        validServer{Port: 1}, // would fail if validated
 	}
 
 	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{"SERVER_PORT=80"} }))
 	require.Error(t, err)
-	assert.Equal(t, "Server: privileged port\nBackup.DB: empty dsn", err.Error())
+	assert.Equal(t, "Server: privileged port\nBackup.DB: empty dsn\nPointer: privileged port", err.Error())
 	assert.Equal(t, 1, calls, "an embedded Validate is promoted and runs once")
 
-	calls = 0
+	calls, v.Pointer = 0, nil // a nil section is not validated
 	err = Load(&v, WithConfig(func(c *Config) {
 		c.Args, c.Envs = []string{}, []string{"SERVER_PORT=8080", "BACKUP_DB_DSN=postgres://"}
 	}))

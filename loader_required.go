@@ -42,7 +42,7 @@ func (e ErrMissingField) Error() string {
 // It returns detailed error messages for all missing fields.
 func ValidateRequiredFields(input any) error {
 	var missingFields []ErrMissingField // nolint:prealloc
-	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: True()}) {
+	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: True(), Pointers: true}) {
 		if err != nil {
 			return fmt.Errorf("(require) %w", err)
 		}
@@ -103,12 +103,16 @@ func validate(v any) error {
 	return errors.Join(errs...)
 }
 
-// validateFields validates the nested structs of v, depth first. Pointers to structs
-// are not followed, like everywhere else in the loader.
+// validateFields validates the nested structs of v, depth first, and the sections
+// behind non-nil pointers to structs.
 func validateFields(v reflect.Value, path string) []error {
 	var errs []error
 
 	for field, value := range v.Fields() {
+		if value.Kind() == reflect.Pointer && !value.IsNil() {
+			value = value.Elem()
+		}
+
 		if value.Kind() != reflect.Struct {
 			continue
 		}
