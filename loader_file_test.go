@@ -3,8 +3,13 @@ package gonfig
 import (
 	"errors"
 	"io"
+	"log/slog"
+	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -189,4 +194,152 @@ func TestFileConfig(t *testing.T) {
 
 	yml.ConfigFile = tmp.Name()
 	require.Equal(t, yml, cfg)
+}
+
+// Regression tests for tmp/REVIEW.md: H-27, H-28, M-13, M-30, H-02, M-32.
+
+type fileEmbedded struct {
+	Level slog.Level `yaml:"level" json:"level" toml:"level"`
+}
+
+type fileSettings struct {
+	fileEmbedded // no tag: every format inlines it, as env does (H-27)
+
+	Interval time.Duration `yaml:"interval" json:"interval" toml:"interval"`
+	Network  net.IPNet     `yaml:"network"  json:"network"  toml:"network"`
+	Big      int64         `yaml:"big"      json:"big"      toml:"big"`
+}
+
+func writeTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	return path
+}
+
+func loadFile(t *testing.T, kind ParserType, content string, dest any) error {
+	t.Helper()
+
+	parser := testFileLoader(t, kind)
+	parser.SetConfigPath(writeTempFile(t, "config", content))
+
+	return parser.Load(dest)
+}
+
+func TestFileLoader_SameRulesAsEnv(t *testing.T) {
+	_, network, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	expect := fileSettings{
+		fileEmbedded: fileEmbedded{Level: slog.LevelWarn},
+		Interval:     3 * time.Second,
+		Network:      *network,
+		Big:          9007199254740993, // 2^53+1: lost if JSON numbers go through float64
+	}
+
+	cases := map[ParserType]string{
+		ParserYAML: "level: WARN\ninterval: 3s\nnetwork: 10.0.0.0/8\nbig: 9007199254740993\n",
+		ParserJSON: `{"level": "WARN", "interval": "3s", "network": "10.0.0.0/8", "big": 9007199254740993}`,
+		ParserTOML: "level = \"WARN\"\ninterval = \"3s\"\nnetwork = \"10.0.0.0/8\"\nbig = 9007199254740993\n",
+	}
+
+	for kind, content := range cases {
+		t.Run(string(kind), func(t *testing.T) {
+			var got fileSettings
+			require.NoError(t, loadFile(t, kind, content, &got))
+			assert.Equal(t, expect, got)
+		})
+	}
+
+	t.Run("duration as nanoseconds still works", func(t *testing.T) {
+		var got fileSettings
+		require.NoError(t, loadFile(t, ParserJSON, `{"interval": 3000000000}`, &got))
+		assert.Equal(t, 3*time.Second, got.Interval)
+	})
+}
+
+func TestFileLoader_EmptyFile(t *testing.T) {
+	cases := map[string]struct {
+		kind    ParserType
+		content string
+	}{
+		"yaml empty":         {ParserYAML, ""},
+		"yaml comments only": {ParserYAML, "# nothing here yet\n"},
+		"json empty":         {ParserJSON, ""},
+		"json whitespace":    {ParserJSON, " \n"},
+		"toml comments only": {ParserTOML, "# nothing here yet\n"},
+	}
+
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := fileSettings{Interval: time.Minute}
+			require.NoError(t, loadFile(t, tt.kind, tt.content, &got))
+			assert.Equal(t, time.Minute, got.Interval, "an empty file must not reset values")
+		})
+	}
+}
+
+type trackingFile struct {
+	io.Reader
+
+	closed bool
+}
+
+func (f *trackingFile) Close() error {
+	f.closed = true
+
+	return nil
+}
+
+func TestFileLoader_ClosesFileOnParseError(t *testing.T) {
+	file := &trackingFile{Reader: strings.NewReader("invalid: [")}
+	parser := testFileLoader(t, ParserYAML, func(options *fileLoaderOptions) {
+		options.open = func(string) (io.ReadCloser, error) { return file, nil }
+	})
+	parser.SetConfigPath("config.yaml")
+
+	var v fileSettings
+	require.ErrorIs(t, parser.Load(&v), ErrCantParse)
+	assert.True(t, file.closed)
+}
+
+func TestFileLoader_ErrorIsOneLineWithPath(t *testing.T) {
+	parser := testFileLoader(t, ParserYAML)
+	path := writeTempFile(t, "broken.yaml", "interval: [1, 2]\nnetwork: 300.0.0.0/8\n")
+	parser.SetConfigPath(path)
+
+	var v fileSettings
+	err := parser.Load(&v)
+	require.ErrorIs(t, err, ErrCantParse)
+	assert.Contains(t, err.Error(), path)
+	assert.NotContains(t, err.Error(), "\n")
+}
+
+func TestFileLoader_JSONNumbers(t *testing.T) {
+	var got struct {
+		Uint  uint64  `json:"uint"`
+		Float float64 `json:"float"`
+	}
+
+	require.NoError(t, loadFile(t, ParserJSON, `{"uint": 18446744073709551615, "float": 1.5}`, &got))
+	assert.Equal(t, uint64(18446744073709551615), got.Uint)
+	assert.InDelta(t, 1.5, got.Float, 0)
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+
+func (failingReader) Close() error { return nil }
+
+func TestFileLoader_ReadError(t *testing.T) {
+	parser := testFileLoader(t, ParserYAML, func(options *fileLoaderOptions) {
+		options.open = func(string) (io.ReadCloser, error) { return failingReader{}, nil }
+	})
+	parser.SetConfigPath("config.yaml")
+
+	var v fileSettings
+	assert.ErrorIs(t, parser.Load(&v), ErrCantParse)
 }

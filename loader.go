@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Error is a custom error type based on a string.
@@ -169,6 +170,21 @@ const (
 // Error implements the error interface for the Error type.
 // It returns the error message as a string, which is the underlying value of the Error.
 func (e Error) Error() string { return string(e) }
+
+// singleLine keeps the wrapped error for errors.Is/As but prints it on one line:
+// decoders and errors.Join separate messages with newlines, which breaks line-based logs.
+type singleLine struct{ error }
+
+func (e singleLine) Error() string {
+	lines := strings.FieldsFunc(e.error.Error(), func(r rune) bool { return r == '\n' })
+	for i := range lines {
+		lines[i] = strings.TrimSpace(lines[i])
+	}
+
+	return strings.Join(lines, "; ")
+}
+
+func (e singleLine) Unwrap() error { return e.error }
 
 // WithCustomParser creates a LoaderOption that adds a custom parser to the loader's group of parsers.
 // This function allows you to inject a parser into the loader, which will be used to handle a specific
