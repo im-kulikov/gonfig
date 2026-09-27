@@ -99,7 +99,8 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 //   - opts: Optional EnvUsageOption(s) to configure behavior, such as adding a prefix to environment variable names.
 //
 // Returns:
-//   - A string describing the environment variables and their usage, or an empty string if the input is not valid.
+//   - A string describing the environment variables and their usage, or an empty string if there are none
+//     or the input is not valid.
 //
 // The function ensures that the input is a pointer to a struct. It traverses the struct fields,
 // generating usage information based on the tags. If a struct field is another struct, it recurses
@@ -181,6 +182,10 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 
 	prefix := envPrefix(options.prefix)
 
+	if len(output) == 0 {
+		return ""
+	}
+
 	out := make([]string, 0, len(output))
 	for _, item := range output {
 		out = append(out, fmt.Sprintf("  - '%s%s' <%s>%s", prefix, item.Name, item.Type, item.Usage))
@@ -256,9 +261,11 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 	return func(v any) error {
 		// Attempt to load the configuration
 		if err := handler(v); errors.Is(err, pflag.ErrHelp) {
-			// If the error is the help flag, print environment variable usage
-			writeln(l.buffer)
-			writeln(l.buffer, UsageOfEnvs(v, EnvUsageWithPrefix(l.EnvPrefix)))
+			// If the error is the help flag, print the variables the env loader reads
+			if usage := UsageOfEnvs(v, EnvUsageWithPrefix(l.EnvPrefix)); usage != "" && !l.SkipEnv {
+				writeln(l.buffer)
+				writeln(l.buffer, usage)
+			}
 
 			// Handle program exit for tests or production
 			l.exit(0)

@@ -179,7 +179,7 @@ Any other type the `default` tag parses gets a flag parsed the same way: named t
 the same flag on two fields.
 
 `--help` prints every flag with the default from its `default` tag, never a value loaded from a file or
-the environment, then every environment variable, and exits with code 0. `WithCustomOutput` and
+the environment, then every environment variable (unless `SkipEnv`), and exits with code 0. `WithCustomOutput` and
 `WithCustomExit` redirect the output and replace `os.Exit`; `Load` then returns `ErrTestExit`.
 
 Positional arguments, the ones left after the flags and all after `--`, go to a `[]string` field tagged

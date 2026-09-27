@@ -139,6 +139,24 @@ Environment variables:
 	require.Equal(t, expectedOutput, buf.String())
 }
 
+func TestUsage_NoEnvs(t *testing.T) {
+	help := func(conf any, skipEnv bool) string {
+		var buf bytes.Buffer
+
+		require.ErrorIs(t, Load(conf, WithCustomOutput(&buf), WithCustomExit(func(int) {}),
+			WithConfig(func(c *Config) { c.Args, c.SkipEnv = []string{"--help"}, skipEnv })), ErrTestExit)
+
+		return buf.String()
+	}
+
+	var onlyFlags struct {
+		Name string `flag:"name"`
+	}
+
+	assert.Equal(t, "Usage of flags:\n      --name string   \n", help(&onlyFlags, false), "no env fields, no env section")
+	assert.NotContains(t, help(&TestLoaderConfig{}, true), "Environment variables", "SkipEnv: variables are not read")
+}
+
 func TestLoader(t *testing.T) {
 	require.NoError(t, New(Config{}).Load(&struct{}{}))
 
