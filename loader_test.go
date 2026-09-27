@@ -283,8 +283,7 @@ func TestLoadingOrder(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, file.Close())
 
-		require.NoError(t, os.Setenv("VALUE", "env-val"))
-		t.Cleanup(func() { assert.NoError(t, os.Unsetenv("VALUE")) })
+		t.Setenv("VALUE", "env-val")
 
 		var cfg ConfigStruct
 		require.NoError(t, New(Config{
@@ -302,8 +301,7 @@ func TestLoadingOrder(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, file.Close())
 
-		require.NoError(t, os.Setenv("VALUE", "env-val"))
-		t.Cleanup(func() { assert.NoError(t, os.Unsetenv("VALUE")) })
+		t.Setenv("VALUE", "env-val")
 
 		var cfg ConfigStruct
 		require.NoError(t, New(Config{
