@@ -246,32 +246,35 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 			return
 		}
 
-		structs := []*ReflectValue{{Value: v.Elem()}}
+		// Walk depth first, so fields come in the order they are declared,
+		// nested ones in place of their struct.
+		var walk func(elem *ReflectValue) bool
 
-	loop: // Start reflecting over the struct fields recursively.
-		for j := 0; j < len(structs); j++ {
-			elem := structs[j]
-
+		walk = func(elem *ReflectValue) bool {
 			for i := range elem.Value.NumField() {
-				fv := elem.Value.Field(i) // Get the field's reflect.Value.
-
-				// Apply filtering based on the provided ReflectOptions.
+				fv := elem.Value.Field(i)
 				if !options.IsValid(fv) {
 					continue
 				}
 
-				if !options.IsField(fv) {
-					// A nested struct: its fields are visited after the ones of this level.
-					structs = append(structs, &ReflectValue{Value: fv, Field: elem.Value.Type().Field(i), Owner: elem})
+				child := &ReflectValue{Value: fv, Field: elem.Value.Type().Field(i), Owner: elem}
+				if !options.IsField(fv) { // a nested struct
+					if !walk(child) {
+						return false
+					}
 
 					continue
 				}
 
 				// Stop when the consumer breaks out of the loop.
-				if !yield(&ReflectValue{Value: fv, Owner: elem, Field: elem.Value.Type().Field(i)}, nil) {
-					break loop
+				if !yield(child, nil) {
+					return false
 				}
 			}
+
+			return true
 		}
+
+		walk(&ReflectValue{Value: v.Elem()})
 	}
 }
