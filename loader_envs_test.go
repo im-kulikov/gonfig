@@ -21,26 +21,26 @@ func TestPrepareEnvs(t *testing.T) {
 		"INVALID_FORMAT", // Этот элемент будет пропущен
 	}
 
-	expected := map[string]interface{}{
+	expected := map[string]any{
 		"HELLO_WORLD":         "1",
 		"TEST_VALUE_FOR_TEST": "42",
 		"FOO_BAR_BAZ":         "100",
 
-		"HELLO": map[string]interface{}{
+		"HELLO": map[string]any{
 			"WORLD": "1",
 		},
-		"TEST": map[string]interface{}{
+		"TEST": map[string]any{
 			"VALUE_FOR_TEST": "42",
-			"VALUE": map[string]interface{}{
+			"VALUE": map[string]any{
 				"FOR_TEST": "42",
-				"FOR": map[string]interface{}{
+				"FOR": map[string]any{
 					"TEST": "42",
 				},
 			},
 		},
-		"FOO": map[string]interface{}{
+		"FOO": map[string]any{
 			"BAR_BAZ": "100",
-			"BAR": map[string]interface{}{
+			"BAR": map[string]any{
 				"BAZ": "100",
 			},
 		},
@@ -52,11 +52,11 @@ func TestPrepareEnvs(t *testing.T) {
 
 // Тестирование LoadEnvs
 func TestLoadEnvs(t *testing.T) {
-	envs := map[string]interface{}{
-		"HELLO": map[string]interface{}{
+	envs := map[string]any{
+		"HELLO": map[string]any{
 			"WORLD": "1",
 		},
-		"FOO": map[string]interface{}{
+		"FOO": map[string]any{
 			"BAR": "test-value",
 		},
 		"TIMEOUT": (time.Second * 15).String(),
@@ -94,7 +94,7 @@ func TestLoadEnvs(t *testing.T) {
 
 // Тестирование случая с ошибкой в LoadEnvs
 func TestLoadEnvs_Error(t *testing.T) {
-	invalidEnvs := map[string]interface{}{
+	invalidEnvs := map[string]any{
 		"HELLO": "invalid structure", // Здесь должна быть вложенная карта, но передана строка
 	}
 

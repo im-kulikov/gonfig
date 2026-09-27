@@ -36,7 +36,7 @@ func newDefaultParser() *parserFunc {
 // and custom unmarshalling for types implementing encoding.TextUnmarshaler.
 // Returns an error if the destination is not a pointer or if setting a default value fails.
 func SetDefaults(dest any) error {
-	types := []reflect.Type{reflect.TypeOf(net.IPNet{})}
+	types := []reflect.Type{reflect.TypeFor[net.IPNet]()}
 	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanAddr: True(), AsField: types}) {
 		if err != nil {
 			return fmt.Errorf("(defaults) %w", err)
@@ -235,7 +235,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 		}
 
 		field.Set(maper)
-	case reflect.Ptr:
+	case reflect.Pointer:
 		elem := reflect.New(field.Type().Elem())
 		if err = setDefaultValue(elem.Elem(), value); err != nil {
 			return fmt.Errorf("could not set default %q: %w", elem, err)

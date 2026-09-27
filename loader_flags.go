@@ -24,7 +24,7 @@ const (
 	FlagSetName = "flags"
 )
 
-var markerType = reflect.TypeOf((*DefaultConfigMarker)(nil)).Elem()
+var markerType = reflect.TypeFor[DefaultConfigMarker]()
 
 // DefaultConfigMarker is an interface used to identify structures that
 // provide default configuration flag support.
@@ -43,7 +43,7 @@ func (DefaultConfigFlag) IsDefaultConfig() {}
 // It uses the provided arguments to populate the configuration by preparing and parsing the flags.
 // Returns a Parser that processes command-line flags.
 func newFlagsLoader(l *loader) *parserFunc {
-	return &parserFunc{name: ParserFlags, call: func(val interface{}) error {
+	return &parserFunc{name: ParserFlags, call: func(val any) error {
 		set := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
 		if containsDefaultConfigFlag(val) {
 			set.StringVarP(&l.config, "config", "c", l.config, "path to config file")
@@ -63,7 +63,7 @@ func newFlagsLoader(l *loader) *parserFunc {
 // It inspects the struct fields and creates corresponding flags in the flag set using the specified tags.
 // Returns an error if the preparation of flags fails.
 func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
-	types := []reflect.Type{reflect.TypeOf(net.IPNet{})}
+	types := []reflect.Type{reflect.TypeFor[net.IPNet]()}
 
 	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True(), AsField: types}) {
 		if err != nil {
@@ -183,7 +183,7 @@ func containsDefaultConfigFlag(val any) bool {
 		return false
 	}
 
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -191,15 +191,14 @@ func containsDefaultConfigFlag(val any) bool {
 		return false
 	}
 
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		if f.Type.Implements(markerType) || reflect.PointerTo(f.Type).Implements(markerType) {
 			return true
 		}
 
 		if f.Anonymous {
 			ft := f.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct && containsDefaultConfigFlag(reflect.New(ft).Interface()) {

@@ -159,7 +159,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 	t.Run("array", func(t *testing.T) {
 		kind := reflect.StructOf([]reflect.StructField{{
 			Name: "SomeField",
-			Type: reflect.TypeOf([3]int{}),
+			Type: reflect.TypeFor[[3]int](),
 			Tag:  `default:"1,2,3,4"`,
 		}})
 
@@ -186,7 +186,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		t.Run("net.IPMask", func(t *testing.T) {
 			kind := reflect.StructOf([]reflect.StructField{{
 				Name: "SomeField",
-				Type: reflect.TypeOf(net.IPMask{}),
+				Type: reflect.TypeFor[net.IPMask](),
 				Tag:  `default:"invalid"`,
 			}})
 
@@ -199,7 +199,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		t.Run("net.IP", func(t *testing.T) {
 			kind := reflect.StructOf([]reflect.StructField{{
 				Name: "SomeField",
-				Type: reflect.TypeOf(net.IP{}),
+				Type: reflect.TypeFor[net.IP](),
 				Tag:  `default:"invalid"`,
 			}})
 
@@ -212,7 +212,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 		t.Run("net.IP", func(t *testing.T) {
 			kind := reflect.StructOf([]reflect.StructField{{
 				Name: "SomeField",
-				Type: reflect.TypeOf(net.IPNet{}),
+				Type: reflect.TypeFor[net.IPNet](),
 				Tag:  `default:"invalid"`,
 			}})
 

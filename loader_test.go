@@ -49,9 +49,9 @@ func testCustomOptions(options ...LoaderOption) []LoaderOption {
 		WithCustomParser(NewCustomParser(parserCustomType, customLoad)))
 }
 
-func customLoad(dest interface{}) error {
+func customLoad(dest any) error {
 	v := reflect.ValueOf(dest)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return fmt.Errorf("(custom) dest must be a pointer, got %T", dest)
 	}
 
@@ -89,7 +89,7 @@ func TestNew(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "custom.json")
 	require.NoError(t, err)
 
-	require.NoError(t, json.NewEncoder(file).Encode(map[string]interface{}{
+	require.NoError(t, json.NewEncoder(file).Encode(map[string]any{
 		"json-field": "custom-value",
 	}))
 

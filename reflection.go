@@ -122,7 +122,9 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 //	s := Ptr("hello")  // Returns a pointer to the string "hello"
 //
 // E must be a type that supports the comparable constraint.
-func Ptr[E comparable](v E) *E { return &v }
+//
+//go:fix inline
+func Ptr[E comparable](v E) *E { return new(v) }
 
 // True returns a pointer to a boolean value set to true.
 // It uses the Ptr function to quickly generate a pointer for the boolean literal true.
@@ -130,7 +132,7 @@ func Ptr[E comparable](v E) *E { return &v }
 // Example usage:
 //
 //	b := True()  // Returns *bool pointing to true
-func True() *bool { return Ptr(true) }
+func True() *bool { return new(true) }
 
 // False returns a pointer to a boolean value set to false.
 // Like True, it uses the Ptr function to generate a pointer to the boolean literal false.
@@ -138,7 +140,7 @@ func True() *bool { return Ptr(true) }
 // Example usage:
 //
 //	b := False()  // Returns *bool pointing to false
-func False() *bool { return Ptr(false) }
+func False() *bool { return new(false) }
 
 // IsValid checks whether a `reflect.Value` satisfies the conditions specified in the ReflectOptions.
 // It validates whether the value's CanSet, CanAddr, and CanInterface properties match the corresponding
@@ -210,7 +212,7 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 		v := reflect.ValueOf(in)
 
 		// Check if the input is a pointer. If not, yield an error.
-		if v.Kind() != reflect.Ptr {
+		if v.Kind() != reflect.Pointer {
 			yield(nil, fmt.Errorf("%w, got %q", ErrExpectPointer, v.Kind()))
 
 			return

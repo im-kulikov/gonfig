@@ -441,7 +441,7 @@ func New(config Config, options ...LoaderOption) Parser {
 	// 3. Custom orders (e.g., file loaders)
 	// 4. Envs (overrides file)
 	// 5. Flags (the highest priority)
-	return &parserFunc{call: wrapUsageLoader(l, func(v interface{}) error {
+	return &parserFunc{call: wrapUsageLoader(l, func(v any) error {
 		l.output = v
 
 		for _, option := range options {
