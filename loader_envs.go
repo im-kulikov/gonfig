@@ -105,7 +105,7 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 // generating usage information based on the tags. If a struct field is another struct, it recurses
 // into the nested fields.
 //
-// nolint:funlen,gocognit
+//nolint:funlen,gocognit
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	output := make([]envUsage, 0)
 	exists := make(map[string]struct{})
@@ -212,7 +212,7 @@ func envPrefix(prefix string) string {
 //  3. On successful execution of the handler without errors, it proceeds normally.
 //
 // Params:
-// - svc: The *loader, which contains the `EnvPrefix` and an optional custom exit function.
+// - l: The *loader, which contains the `EnvPrefix`, the output and the exit function.
 // - handler: The function responsible for loading the configuration (e.g., from flags or envs).
 //
 // Returns:
@@ -296,7 +296,7 @@ func insertIntoMap(m map[string]any, keys []string, value any) {
 // It supports basic types, time.Duration, IP-related types and encoding.TextUnmarshaler.
 // It returns the parsed value or an error if the conversion fails.
 //
-// nolint:ireturn
+//nolint:ireturn
 func decodeHooks() mapstructure.DecodeHookFunc {
 	decoders := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.StringToTimeDurationHookFunc(),

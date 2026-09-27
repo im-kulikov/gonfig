@@ -75,26 +75,17 @@ func (p *parserFunc) Load(dest any) error {
 	return p.call(dest)
 }
 
-// NewCustomParser creates a new custom parser with the specified name and loader function.
+// NewCustomParser creates a Parser of the given type from a function that loads
+// the configuration into dest, a pointer to the configuration struct:
 //
-// Parameters:
-//   - name: A ParserType value representing the name or type of the custom parser.
-//   - Loader: A function that takes Config and an any and returns an error. This function
-//     defines how the custom parser should load or parse the configuration data.
+//	parser := gonfig.NewCustomParser("vault", func(dest any) error {
+//		cfg := dest.(*Config)
+//		cfg.Password = readFromVault()
 //
-// Returns:
-//   - A Parser interface which is implemented by the custom parser. This allows the
-//     library to use the provided loader function to process configuration data according
-//     to the specified ParserType.
-//
-// Example usage:
-//
-//	customParser := NewCustomParser("myCustomParser", func(Config, any) error {
-//	    // Custom parsing logic here
-//	    return nil
+//		return nil
 //	})
 //
-// nolint:ireturn
+//nolint:ireturn
 func NewCustomParser(name ParserType, loader func(any) error) Parser {
 	return &parserFunc{name: name, call: loader}
 }

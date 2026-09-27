@@ -12,45 +12,8 @@ import (
 // It represents an error that is constant and does not change at runtime.
 type Error string
 
-// Config holds the configuration options for loading settings using various parsers such as defaults,
-// environment variables, and command-line flags.
-//
-// Fields:
-// - SkipDefaults: If true, the loader will skip loading configurations from the 'default' tags in struct fields.
-// - SkipEnv: If true, the loader will skip loading configurations from environment variables.
-// - SkipFlags: If true, the loader will skip loading configurations from command-line flags.
-//
-//   - EnvPrefix: A string that specifies a prefix for filtering environment variables. Only variables
-//     starting with this prefix will be considered.
-//
-//   - LoaderOrder: Defines the default order in which the parsers are executed:
-//     1. Defaults (from struct tags)
-//     2. Config source (pre-scanning flags for a configuration path)
-//     3. Custom loaders (e.g., file loaders like JSON, YAML, TOML)
-//     4. Environment variables (overrides file values)
-//     5. Flags (the highest priority, overrides all previous)
-//
-//   - Envs: A slice of environment variables to be used for parsing. If left nil, the loader will
-//     default to using `os.Environ()`.
-//
-//   - Args: A slice of command-line arguments to be used for parsing. If left nil, the loader will
-//     default to using `os.Args`. The user can explicitly parse this if required.
-//
-// `loader` struct:
-// - Embeds `Config` to inherit its configuration options.
-// - `groups`: A map that holds the different `Parser` implementations, indexed by `ParserType`.
-//
-// Types:
-// - `LoaderOption`: A function type used to apply custom options to the `loader`.
-// - `ParserType`: Represents the type of parser (e.g., "defaults", "env", "flags").
-//
-// Constants:
-// - `ParserDefaults`: Represents the default parser that loads configurations based on struct tags.
-// - `ParserFlags`: Represents the parser that loads configurations from command-line flags.
-// - `ParserEnv`: Represents the parser that loads configurations from environment variables.
-//
-// Example Usage:
-// Custom parsers can be injected using `LoaderOption` functions, such as `WithCustomParser`.
+// Config controls a loader. The order of the sources is fixed, each one overriding
+// the previous ones (see New); the Skip* fields turn a built-in source off.
 type Config struct {
 	SkipDefaults bool // SkipDefaults set to true will not load config from the 'default' tag.
 	SkipEnv      bool // SkipEnv set to true will not load config from environment variables.
@@ -69,31 +32,12 @@ type Config struct {
 	Envs []string
 
 	// Args hold the command-line arguments from which flags will be parsed.
-	// By default, it is nil and then os.Args will be used.
-	// Unless loader.Flags() will be explicitly parsed by the user.
+	// By default, it is nil and then os.Args[1:] will be used.
 	Args []string
 }
 
-// Loader is responsible for managing the configuration loading process by coordinating different parsers.
-// It embeds the `Config` struct and contains a map of `Parser` implementations.
-//
-// Fields:
-//
-//   - Config: The embedded configuration settings that control how the loader behaves. This includes
-//     flags for skipping defaults, environment variables, or command-line flags, as well as any custom
-//     environment variables and arguments provided.
-//
-//   - Groups: A map where the keys are `ParserType` values (such as "defaults", "env", and "flags"),
-//     and the values are `Parser` instances. This map allows the loader to invoke the correct parser
-//     based on the order specified in `LoaderOrder` from the `Config`.
-//
-// The `loader` is initialized with a set of defaults, and custom options can be added through
-// `LoaderOption` functions. Each parser in the `groups` map is responsible for loading part of the
-// configuration from its respective source (e.g., defaults, environment variables, or flags).
-//
-// Example:
-// A `loader` might have parsers for environment variables and flags configured, and it would
-// execute them in the order defined by `LoaderOrder`, applying each configuration in sequence.
+// loader is the state of one Load (see New): the Config after the options, the
+// parsers by type, the order of the custom ones, and what the flags set.
 type loader struct {
 	Config
 
@@ -108,54 +52,23 @@ type loader struct {
 	exit func(int) // used for tests, to ignore os.Exit
 }
 
-// LoaderOption defines a function type used to customize the behavior of the loader.
-// Each `LoaderOption` takes a pointer to a `loader` and returns an error if the customization fails.
+// LoaderOption customizes a loader: adds parsers (WithYAMLLoader, WithCustomParser),
+// changes the Config (WithConfig, WithStrict), the defaults (WithDefaults) or the
+// output and exit of --help (WithCustomOutput, WithCustomExit). Options are applied
+// in order on every Load. Your own options are made of these, for example:
 //
-// The purpose of `LoaderOption` is to allow for flexible configuration of the loader instance.
-// Options can be applied to modify the loader’s behavior, such as adding custom parsers,
-// modifying existing parsers, or changing configuration settings.
-//
-// Usage:
-// A `LoaderOption` function is passed to the `New` function or similar, allowing for dynamic
-// configuration. Multiple options can be combined, and each one will be applied to the loader
-// sequentially.
-//
-// Example:
-//
-//	func WithCustomSetting(setting string) LoaderOption {
-//	    return func(l *loader) error {
-//	        // modify loader based on custom setting
-//	        l.Config.SomeSetting = setting
-//	        return nil
-//	    }
+//	func WithProduction() gonfig.LoaderOption {
+//		return gonfig.WithOptions([]gonfig.LoaderOption{
+//			gonfig.WithStrict(),
+//			gonfig.WithConfig(func(c *gonfig.Config) { c.EnvPrefix = "APP" }),
+//		})
 //	}
 type LoaderOption func(*loader) error
 
-// ParserType represents the different types of parsers that can be used in the loader system.
-// It is defined as a string to allow for flexible and extensible parser type definitions.
-//
-// Each value of `ParserType` corresponds to a specific source or method of configuration parsing.
-// The parser types determine the priority and the sequence in which the parsers are applied.
-//
-// Constants:
-//
-//   - ParserDefaults: Represents the default parser type that handles configuration values
-//     set by default values in the code or configuration. This parser is typically used to
-//     provide fallback values when other sources do not supply a value.
-//
-//   - ParserFlags: Represents the parser type that handles command-line flags. This parser
-//     processes the command-line arguments passed to the program to configure various options.
-//
-//   - ParserEnv: Represents the parser type that handles environment variables. This parser
-//     reads configuration values from environment variables, which can be used to configure
-//     the application in different deployment environments.
-//
-// To specify the order in which parsers should be applied, the default sequence is:
-// Defaults -> Config-path -> File -> Env -> Flags.
-//
-//	config := Config{
-//	    LoaderOrder: []ParserType{ParserDefaults, ParserEnv, ParserFlags},
-//	}
+// ParserType names a parser. A custom parser of a built-in type (ParserDefaults,
+// ParserConfigSet, ParserEnv, ParserFlags) replaces the built-in one at its step;
+// any other type adds a parser that runs after the config path is known and
+// before environment variables and flags (see WithCustomParser).
 type ParserType string
 
 const (
@@ -195,28 +108,12 @@ func (e singleLine) Error() string {
 
 func (e singleLine) Unwrap() error { return e.error }
 
-// WithCustomParser creates a LoaderOption that adds a custom parser to the loader's group of parsers.
-// This function allows you to inject a parser into the loader, which will be used to handle a specific
-// type of configuration source. The custom parser will be added to the loader's parser group, enabling
-// it to be invoked during the configuration loading process.
+// WithCustomParser adds a custom parser, for example a loader of another file format.
+// Parsers run in the order they were added; adding a parser of the same type again
+// replaces it. A parser of a built-in type replaces the built-in one (see ParserType).
+// A nil parser is ignored. To get the path from --config, implement ParserConfigSetter.
 //
-// Parameters:
-//   - p: The custom parser to be added to the loader. The parser must implement the `Parser` interface.
-//     If the provided parser is `nil`, no action is taken and the function returns `nil`.
-//
-// Returns:
-//   - A `LoaderOption` function that, when applied to a `loader`, will add the custom parser to the loader's
-//     group of parsers.
-//
-// Example usage:
-// If you have a custom parser that implements the `Parser` interface ands you want to include it in the
-// loader's configuration process, you can use this function to add it:
-//
-//	myParser := NewMyCustomParser() // Assume this returns a valid Parser
-//	option := WithCustomParser(myParser)
-//	loader := NewLoader(config, option)
-//
-// This will ensure that `myParser` is used by the loader to process configuration data.
+//	parser := gonfig.New(gonfig.Config{}, gonfig.WithCustomParser(myParser))
 func WithCustomParser(p Parser) LoaderOption {
 	return func(l *loader) error {
 		if p != nil {
@@ -468,7 +365,7 @@ func (l *loader) setLoaderDefaults() {
 // required fields are checked and Validate is called if v implements LoaderValidator.
 // The Parser can be used from several goroutines.
 //
-// nolint:ireturn
+//nolint:ireturn
 func New(config Config, options ...LoaderOption) Parser {
 	return &parserFunc{call: func(v any) error {
 		l := newLoader(config, v)
