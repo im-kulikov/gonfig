@@ -110,7 +110,7 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	output := make([]envUsage, 0)
 	exists := make(map[string]struct{})
-	for field, err := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True()}) {
+	for field, err := range ReflectFieldsOf(withSections(dest), ReflectOptions{CanSet: True(), Pointers: true}) {
 		if err != nil {
 			return ""
 		}
@@ -198,6 +198,41 @@ func envPrefix(prefix string) string {
 	}
 
 	return prefix + envDelimiter
+}
+
+// withSections returns a new zero value of the struct dest points to, with every
+// section (a pointer to a struct) allocated, so that the help lists the variables
+// inside sections too: env creates them. dest itself is not changed. A section of
+// a type that contains itself is left nil. Anything but a pointer to a struct is
+// returned as is, for ReflectFieldsOf to report.
+func withSections(dest any) any {
+	v := reflect.ValueOf(dest)
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
+		return dest
+	}
+
+	template := reflect.New(v.Elem().Type())
+	allocateSections(template.Elem(), []reflect.Type{v.Elem().Type()})
+
+	return template.Interface()
+}
+
+func allocateSections(v reflect.Value, path []reflect.Type) {
+	for field, value := range v.Fields() {
+		elem := field.Type
+		if elem.Kind() == reflect.Pointer {
+			elem = elem.Elem()
+		}
+
+		switch {
+		case elem.Kind() != reflect.Struct || textStruct(elem):
+		case field.Type.Kind() == reflect.Struct:
+			allocateSections(value, path)
+		case value.CanSet() && !slices.Contains(path, elem):
+			value.Set(reflect.New(elem))
+			allocateSections(value.Elem(), append(slices.Clip(path), elem))
+		}
+	}
 }
 
 // wrapUsageLoader wraps the provided loader function to add additional functionality
