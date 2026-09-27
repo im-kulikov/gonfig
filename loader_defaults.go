@@ -127,7 +127,8 @@ func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
 // If the value is not empty and the field is not yet set (IsZero), it processes the value.
 func tryCustomTypes(field reflect.Value, value string) error {
 	// If the value is empty or the field already has a value, return early with no error.
-	if value == "" || !field.IsZero() {
+	// A nil pointer has nothing to parse into: setDefaultValue allocates its element.
+	if value == "" || !field.IsZero() || field.Kind() == reflect.Pointer {
 		return nil
 	}
 
@@ -277,8 +278,8 @@ func setDefaultValue(field reflect.Value, value string) error {
 		return setDefaultMap(field, value)
 	case reflect.Pointer:
 		elem := reflect.New(field.Type().Elem())
-		if err = setDefaultValue(elem.Elem(), value); err != nil {
-			return fmt.Errorf("could not set default %q: %w", elem, err)
+		if err = applyDefault(elem.Elem(), value); err != nil {
+			return err
 		}
 
 		field.Set(elem)
