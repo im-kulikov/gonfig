@@ -57,6 +57,10 @@ type Config struct {
 
 	EnvPrefix string // EnvPrefix for environment variables.
 
+	// Strict makes file loaders fail on keys that match no field, so a typo
+	// in a config file is an error instead of a silently ignored value.
+	Strict bool
+
 	// Envs hold the environment variable from which envs will be parsed.
 	// By default, it is nil and then os.Environ() will be used.
 	Envs []string
@@ -361,6 +365,11 @@ func WithConfig(handler func(*Config)) LoaderOption {
 	}
 }
 
+// WithStrict makes file loaders fail on keys that match no field (see Config.Strict).
+func WithStrict() LoaderOption {
+	return WithConfig(func(c *Config) { c.Strict = true })
+}
+
 // WithDefaults sets default values for the loader's output structure.
 //
 // This function takes a tag-key and map of default values and applies them to the target structure
@@ -490,6 +499,10 @@ func New(config Config, options ...LoaderOption) Parser {
 		for _, typ := range order {
 			if setter, ok := l.groups[typ].(ParserConfigSetter); ok {
 				setter.SetConfigPath(l.config)
+			}
+
+			if setter, ok := l.groups[typ].(strictSetter); ok {
+				setter.setStrict(l.Strict)
 			}
 
 			if err := l.groups[typ].Load(v); err != nil {

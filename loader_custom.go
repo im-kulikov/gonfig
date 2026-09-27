@@ -44,6 +44,12 @@ type ParserConfigSetter interface {
 	SetConfigPath(path string)
 }
 
+// strictSetter is implemented by the file loaders: the loader passes Config.Strict
+// to them right before loading, as it does with the config path.
+type strictSetter interface {
+	setStrict(strict bool)
+}
+
 // parserFunc is a concrete implementation of the Parser interface.
 // It wraps a function that performs the actual loading of configuration data.
 // The `name` field stores the type of the parser, and the `call` field holds the function

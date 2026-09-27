@@ -361,6 +361,7 @@ type decodeOptions struct {
 	tag      string // struct tag with the key names
 	inline   string // tag option that inlines a named struct field
 	untagged bool   // match fields without the tag by their name (files); env skips them
+	strict   bool   // keys that match no field are an error (files only: env holds every variable)
 }
 
 func decodeMapToStruct(dest any, from map[string]any, tag string) error {
@@ -376,6 +377,7 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 		Squash:               true,
 		SquashTagOption:      options.inline,
 		IgnoreUntaggedFields: !options.untagged,
+		ErrorUnused:          options.strict,
 		DecodeHook:           decodeHooks(),
 	}
 

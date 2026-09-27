@@ -343,3 +343,26 @@ func TestFileLoader_ReadError(t *testing.T) {
 	var v fileSettings
 	assert.ErrorIs(t, parser.Load(&v), ErrCantParse)
 }
+
+// M-31: typos in file keys are reported in strict mode.
+func TestWithStrict(t *testing.T) {
+	path := writeTempFile(t, "config.yaml", "levels: WARN\ninterval: 3s\n")
+	load := func(options ...LoaderOption) error {
+		var v struct {
+			DefaultConfigFlag
+			fileSettings
+		}
+
+		return Load(&v, append(options, WithYAMLLoader(), WithConfig(func(c *Config) {
+			c.Args = []string{"--config", path}
+		}))...)
+	}
+
+	require.NoError(t, load(), "unknown keys are ignored by default")
+
+	err := load(WithStrict())
+	require.ErrorIs(t, err, ErrCantParse)
+	assert.Contains(t, err.Error(), "levels")
+
+	require.Error(t, load(WithConfig(func(c *Config) { c.Strict = true })))
+}
