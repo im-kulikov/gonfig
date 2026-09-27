@@ -6,30 +6,17 @@
 ![Go version](https://img.shields.io/github/go-mod/go-version/im-kulikov/gonfig?style=flat&label=Go%20%3E%3D)
 [![PkgGoDev](https://pkg.go.dev/badge/mod/github.com/im-kulikov/gonfig)](https://pkg.go.dev/mod/github.com/im-kulikov/gonfig)
 
-## What is _gonfig_?
+**gonfig** loads a Go struct from defaults, config files (YAML, JSON, TOML), environment variables and
+command-line flags, with one set of rules for every source. Struct tags are the whole setup: no key
+registration, no global state.
 
-**gonfig** is a flexible and extensible configuration library designed to simplify working with application settings. 
-It supports loading configurations from environment variables, command-line flags, and various configuration file formats. 
-Additionally, it offers an easy way to extend support for new formats. One of its key features is the ability to replace 
-or customize components, such as using `spf13/pflag` instead of the standard `flag` package from the Go standard library.
+- one struct, four sources, a fixed priority;
+- `--help` lists every flag and environment variable, `--print-config` writes a documented template;
+- secrets are hidden from help and exports, strict mode catches typos in config files;
+- other sources plug in through a small `Parser` interface.
 
-This library simplifies configuration management, making it easy to define, override, and merge settings in your applications.
-
-## Why Use Gonfig?
-
-- **Multiple Sources** – Load configurations from config-files, flags, environment variables, or custom sources.
-- **Easy to Use** – Simple API for defining and managing configurations.
-- **Extensible** – You can implement custom loaders to fit your needs.
-- **Lightweight** – No unnecessary dependencies, optimized for performance.
-
-### General Priority Hierarchy:
-
-Every source overrides the previous ones. The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off.
-
-1. **Defaults** — Basic configuration values embedded in the application's code via `default` tags.
-2. **Config File** — Values loaded from a configuration file (JSON, YAML, TOML). The path is determined by a flag pre-scan.
-3. **Environment Variables** — Values from environment variables override file-based configurations.
-4. **Flags** — Command-line flags have the highest priority and override all previous values.
+Every feature has a runnable, tested example in [example_test.go](example_test.go), also on
+[pkg.go.dev](https://pkg.go.dev/github.com/im-kulikov/gonfig#pkg-examples).
 
 ## Installation
 
@@ -37,122 +24,127 @@ Every source overrides the previous ones. The order is fixed; `Config.SkipDefaul
 go get github.com/im-kulikov/gonfig
 ```
 
-**Note:** _gonfig_ uses [Go Modules](https://go.dev/wiki/Modules) to manage dependencies.
+Go 1.26 or newer; the two latest Go releases are supported.
 
-
-### Explain Hierarchy:
-1. **Defaults** — Set in the code via struct tags.
-2. **Config File** — Detailed parameters provided in a structured file.
-3. **Environment Variables** — Overrides file settings for deployment flexibility.
-4. **Flags** — Direct overrides at runtime, providing the final word on configuration.
-
-## Current status
-
-- [x] Load defaults
-- [x] Load environments
-- [x] Load flags
-- [x] Mark as required
-- [x] Load YAML `WithYAMLLoader`
-- [x] Load JSON `WithJSONLoader`
-- [x] Load TOML `WithTOMLLoader`
-- [x] Other formats, you can write it using a custom loader
-- [x] One set of rules for every source: embedded structs, `time.Duration`, `net.IPNet`, `encoding.TextUnmarshaler`
-- [x] Strict mode for config files `WithStrict`
-- [x] Secrets `secret:"true"`: hidden in `--help` and in exported configs
-- [x] Export a config `Write` and the `--print-config` flag `PrintConfigFlag`
-
-## Examples
-
-Each example below has a runnable and tested version in [example_test.go](example_test.go),
-also shown on [pkg.go.dev](https://pkg.go.dev/github.com/im-kulikov/gonfig#pkg-examples).
-
-### Simple
+## Quick start
 
 ```go
 package main
 
 import (
-    "fmt"
+	"log"
+	"time"
 
 	"github.com/im-kulikov/gonfig"
 )
 
 type Config struct {
-	Config string `flag:"config,short:c,config:true"`
-	Field  string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" required:"true"`
+	gonfig.DefaultConfigFlag // --config, -c
+	gonfig.PrintConfigFlag   // --print-config
+
+	Host     string        `yaml:"host"     env:"HOST"     flag:"host" default:"localhost" usage:"server host"`
+	Port     int           `yaml:"port"     env:"PORT"     flag:"port" default:"8080"      usage:"server port"`
+	Timeout  time.Duration `yaml:"timeout"  env:"TIMEOUT"  default:"5s"`
+	Password string        `yaml:"password" env:"PASSWORD" required:"true" secret:"true"`
 }
 
-// go run /path/to/main/folder --config /path/to/config.yml
-func main() {
-	var cfg Config
-	if err := gonfig.Load(&cfg,
-		gonfig.WithYAMLLoader(),
-		gonfig.WithDefaults(gonfig.FlagTag, map[string]any{
-            "field": "some-custom-default-value",
-        })); err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Loaded config: %+v\n", cfg)
-}
-```
-
-### Default Configuration Flag
-
-You can use `DefaultConfigFlag` to automatically enable `--config / -c` flags without manual tagging:
-
-```go
-type Config struct {
-	gonfig.DefaultConfigFlag
-	Field string `flag:"field" env:"FIELD" default:"default-value"`
-}
-
-// go run main.go --config config.yml
 func main() {
 	var cfg Config
 	if err := gonfig.Load(&cfg, gonfig.WithYAMLLoader()); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-}
-```
 
-### Print the configuration
-
-Embed `PrintConfigFlag` to get `--print-config[=yaml|json|toml|env]`. It prints the loaded configuration
-(defaults, file, env and flags) and exits with code 0, like `--help`. Required fields are not checked,
-so the output of a fresh setup is a documented template, with a comment above every value:
-
-```go
-type Config struct {
-	gonfig.DefaultConfigFlag
-	gonfig.PrintConfigFlag
-
-	Addr  string `yaml:"addr"  env:"ADDR"  default:":8080" usage:"listen address"`
-	Token string `yaml:"token" env:"TOKEN" secret:"true"`
+	log.Printf("listening on %s:%d", cfg.Host, cfg.Port)
 }
 ```
 
 ```console
-$ go run . --print-config > config.yaml
-$ cat config.yaml
-# listen address (env: ADDR, default: :8080)
-addr: :8080
-# env: TOKEN, secret
-token: ""
-$ go run . --print-config=env > .env   # for docker --env-file or kubectl create configmap --from-env-file
+$ PASSWORD=secret ./app --config config.yaml --port 9090
+$ ./app --help                        # every flag and environment variable
+$ ./app --print-config > config.yaml  # a documented template of the whole config
 ```
 
-Without a value the format is the one of the file loader (YAML without one), so the output goes straight
-back into `--config`. The same is available in code: `gonfig.Write(os.Stdout, &cfg, gonfig.FormatTOML)`,
-with `gonfig.WithEnvPrefix(prefix)` when the loader uses `Config.EnvPrefix`.
+## Sources and priority
 
-### Secrets
+Every source overrides the previous ones:
 
-Mark a field with `secret:"true"`, or a whole struct to cover its fields. A secret is never shown:
-`--help` prints no default for its flag and lists its environment variable as `(secret)`, `Write` and
-`--print-config` leave it empty. `--help` always shows the `default` tag, not the loaded value.
+1. **Defaults** — `default` tags, and `WithDefaults`, which wins over the tags.
+2. **Config file** — the path is pre-scanned from the flags: `--config` / `-c` with `DefaultConfigFlag`,
+   or the string field tagged `flag:"...,config:true"`. Custom parsers run at this step too.
+3. **Environment variables.**
+4. **Flags.**
 
-### Strict mode
+The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off (`SkipFlags` also
+turns off the config path). After loading, `required` fields are checked and `Validate()` is called.
+
+## Struct tags
+
+| Tag | Example | Meaning |
+|---|---|---|
+| `default` | `default:"8080"`, `default:"a,b"`, `default:"k:1,j:2"` | Value of a field that is still empty; lists and maps are comma-separated |
+| `env` | `env:"PORT"` | Environment variable; names of nested structs are joined with `_` |
+| | `env:",squash"` | Inline the variables of a nested struct, without its prefix |
+| | `env:"-"` | Never read from the environment |
+| `flag` | `flag:"port,short:p"` | Command-line flag and its one-letter shorthand; `flag:"-"` ignores the field |
+| | `flag:"key,base:hex"` | Encoding of a `[]byte` flag: `hex` or `b64` |
+| | `flag:"config,short:c,config:true"` | The string field is the path of the config file |
+| `yaml`, `json`, `toml` | `yaml:"port"`, `yaml:",inline"` | Key in a config file; `,inline` inlines a nested struct; `-` ignores the field |
+| `usage` | `usage:"server port"` | Description in `--help` and in exported configs |
+| `required` | `required:"true"` | Loading fails if the field is still its zero value |
+| `secret` | `secret:"true"` | Never shown in `--help` or exported configs; on a struct, covers its fields |
+
+## Environment variables
+
+A variable name is the `env` tags from the top struct down, joined with `_`. A nested struct without an
+`env` tag hides its fields from the environment and from `--help`; an embedded struct or one tagged
+`env:",squash"` adds no prefix.
+
+```go
+type Config struct {
+	Database struct {
+		Host string `env:"HOST"` // DB_HOST
+	} `env:"DB"`
+
+	Server struct {
+		Port int `env:"PORT"` // PORT
+	} `env:",squash"`
+}
+```
+
+- `Config.EnvPrefix = "APP"` (or `"APP_"`) reads `APP_DB_HOST` and ignores the rest of the environment.
+- Lists are comma-separated: `PORTS=80,443`. Map entries are variables of their own:
+  `LABELS_team=core` for `Labels map[string]string` tagged `env:"LABELS"`.
+- Durations (`5s`), IPs, CIDR networks and every `encoding.TextUnmarshaler` (`slog.Level`, `time.Time`)
+  are parsed from text.
+
+## Config files
+
+`WithYAMLLoader()`, `WithJSONLoader()` or `WithTOMLLoader()` read the file at the config path; without a
+path nothing is read. Use one of them: every file loader reads the same path.
+
+```go
+type Config struct {
+	gonfig.DefaultConfigFlag // --config config.yaml
+
+	Server struct {
+		Addr    string        `yaml:"addr"`
+		Timeout time.Duration `yaml:"timeout"`
+	} `yaml:"server"`
+}
+
+err := gonfig.Load(&cfg, gonfig.WithYAMLLoader())
+```
+
+```yaml
+server:
+  addr: :9000
+  timeout: 3s
+```
+
+Files follow the rules of the environment: keys come from the format's tag (without one, from the field
+name, case-insensitive), embedded structs and `,inline` fields are inlined, and values are converted the
+same way, so `"3s"` is a duration in YAML, JSON and TOML alike. An empty file, or one with comments only,
+changes nothing.
 
 By default keys of a config file that match no field are ignored. With `gonfig.WithStrict()` (or
 `Config{Strict: true}`) such a key, usually a typo, is an error:
@@ -161,142 +153,79 @@ By default keys of a config file that match no field are ignored. With `gonfig.W
 gonfig: could not load: could not parse config.yaml: could not decode: 'main.Config' has invalid keys: listen
 ```
 
-Environment variables are never strict: the environment holds every variable of the process.
+## Flags
 
-### Extended (using New.Load)
+A field with a `flag` tag gets a flag. Supported types: `bool`, `string`, `int`, `int32`, `int64`, `uint`,
+`uint32`, `uint64`, `float32`, `float64`, `time.Duration`, `net.IP`, `net.IPNet`, `net.IPMask`, `[]byte`
+(with `base:hex` or `base:b64`) and slices of `bool`, `string`, `int`, `int32`, `int64`, `float32`,
+`float64`, `net.IP`, `time.Duration`. A flag of another type, or the same flag on two fields, is an error.
+
+`--help` prints every flag with the default from its `default` tag, never a value loaded from a file or
+the environment, then every environment variable, and exits with code 0. `WithCustomOutput` and
+`WithCustomExit` redirect the output and replace `os.Exit`; `Load` then returns `ErrTestExit`.
+
+Flags of `go test` (`-test.*`) are ignored. In tests set `Args` and `Envs` through `WithConfig`, so the
+result does not depend on how the tests are run.
+
+## Defaults
+
+The `default` tag fills a field that no source has set: numbers, strings, booleans, `time.Duration`,
+`net.IPNet` (`10.0.0.0/8`), `net.IPMask` (`/24`), any `encoding.TextUnmarshaler`, pointers to these,
+lists (`a,b`) and maps (`k:1,j:2`).
+
+`WithDefaults(tag, values)` sets defaults at run time from a map keyed by the given tag, with nested maps
+for nested structs. They win over `default` tags and lose to files, environment and flags:
 
 ```go
-package main
+gonfig.WithDefaults("yaml", map[string]any{"server": map[string]any{"addr": ":9000"}})
+```
 
-import (
-    "fmt"
+## Secrets
 
-	"github.com/im-kulikov/gonfig"
-)
+Mark a field with `secret:"true"`, or a whole struct to cover its fields. A secret is never shown:
+`--help` prints no default for its flag and lists its environment variable as `(secret)`, `Write` and
+`--print-config` leave it empty.
 
-type Config struct {
-	Field string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" required:"true"`
-}
+## Print the configuration
 
-func main() {
-	var cfg Config
-	if err := gonfig.New(gonfig.Config{}).Load(&cfg); err != nil {
-		panic(err)
+Embed `PrintConfigFlag` to get `--print-config[=yaml|json|toml|env]`. It prints the loaded configuration
+(defaults, file, env and flags) and exits with code 0, like `--help`. Required fields are not checked,
+so the output of a fresh setup is a documented template, with a comment above every value:
+
+```console
+$ ./app --print-config
+# server host (env: HOST, default: localhost)
+host: localhost
+# server port (env: PORT, default: 8080)
+port: 8080
+# env: TIMEOUT, default: 5s
+timeout: 5s
+# env: PASSWORD, secret
+password: ""
+$ ./app --print-config=env > .env   # for docker --env-file or kubectl create configmap --from-env-file
+```
+
+Without a value the format is the one of the file loader (YAML without one), so the output goes straight
+back into `--config`. The same is available in code: `gonfig.Write(os.Stdout, &cfg, gonfig.FormatTOML)`,
+with `gonfig.WithEnvPrefix(prefix)` when the loader uses `Config.EnvPrefix`.
+
+## Validation
+
+`required:"true"` fails the loading when the field is still its zero value after every source, so `0` and
+`false` cannot be required values. The error lists every missing field with its path. If the struct
+passed to `Load` implements `LoaderValidator`, its `Validate()` is called last:
+
+```go
+func (c *Config) Validate() error {
+	if c.Port < 1024 {
+		return fmt.Errorf("port %d is privileged", c.Port)
 	}
 
-	fmt.Printf("Loaded config: %+v\n", cfg)
+	return nil
 }
 ```
 
-### Use YAML loader
-
-```go
-package main
-
-import (
-	"fmt"
-	
-	"github.com/im-kulikov/gonfig"
-)
-
-type Config struct {
-	Config  string `flag:"config,short:c,config:true"`
-	Port    int    `yaml:"port"`
-}
-
-// go run /path/to/main/folder --config /path/to/config.yml
-func main() {
-	var cfg Config
-	if err := gonfig.Load(&cfg, gonfig.WithYAMLLoader()); err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Loaded config: %+v\n", cfg)
-}
-```
-
-### Use TOML loader
-
-```go
-package main
-
-import (
-	"fmt"
-	
-	"github.com/im-kulikov/gonfig"
-)
-
-type Config struct {
-	Config  string `flag:"config,short:c,config:true"`
-	Port    int    `toml:"port"`
-}
-
-// go run /path/to/main/folder --config /path/to/config.toml
-func main() {
-	var cfg Config
-	if err := gonfig.Load(&cfg, gonfig.WithTOMLLoader()); err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Loaded config: %+v\n", cfg)
-}
-```
-
-### Use JSON loader
-
-```go
-package main
-
-import (
-	"fmt"
-	
-	"github.com/im-kulikov/gonfig"
-)
-
-type Config struct {
-	Config  string `flag:"config,short:c,config:true"`
-	Port    int    `json:"port"`
-}
-
-// go run /path/to/main/folder --config /path/to/config.json
-func main() {
-	var cfg Config
-	if err := gonfig.Load(&cfg, gonfig.WithJSONLoader()); err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Loaded config: %+v\n", cfg)
-}
-```
-
-## Nested Configurations
-
-When using nested structs, you can either provide an environment name for each level, or use the `squash` option to expose underlying fields directly.
-
-```go
-type Config struct {
-    // Exposes ACT_API_ADDRESS
-    Activator struct {
-        Api struct {
-            Address string `env:"ADDRESS"`
-        } `env:"API"`
-    } `env:"ACT"`
-
-    // Exposes DB_HOST
-    Database struct {
-        Host string `env:"HOST"`
-    } `env:"DB"`
-
-    // Exposes PORT: squash inlines the fields into the parent, without a prefix
-    Server struct {
-        Port int `env:"PORT"`
-    } `env:",squash"`
-}
-```
-
-If a nested struct has no `env` tag and is not squashed, its fields will **not** be reachable via environment variables and will be hidden from the help output. Embedded structs are always inlined, as with `squash`.
-
-## Custom Loaders
+## Custom parsers
 
 You can implement your own configuration loaders by implementing the `Parser` interface and registering it with `WithCustomParser`:
 
@@ -347,66 +276,30 @@ func (c *CustomLoader) Type() gonfig.ParserType {
 }
 ```
 
-## Custom validation
+## Options
 
-Introduced in [Issue #3](https://github.com/im-kulikov/gonfig/issues/3)
+| Option | Effect |
+|---|---|
+| `WithYAMLLoader()`, `WithJSONLoader()`, `WithTOMLLoader()` | Read the config file in this format |
+| `WithStrict()` | Keys of a config file that match no field are an error |
+| `WithConfig(func(*Config))` | Change `EnvPrefix`, `Skip*`, `Strict`, `Args`, `Envs` |
+| `WithDefaults(tag, map)` | Defaults from a map |
+| `WithCustomParser(p)`, `WithCustomParserInit(f)` | Add a parser or replace a built-in one |
+| `WithOptions(options)` | Apply a list of options, or a function returning one |
+| `WithCustomOutput(w)`, `WithCustomExit(f)` | Output of `--help` / `--print-config` and the exit function |
 
-A new Go interface, `LoaderValidator`. Any struct that implements this interface will have its `Validate()` method called automatically by the loading mechanism.
+`gonfig.Load(&cfg, options...)` is `gonfig.New(gonfig.Config{}, options...).Load(&cfg)`. A `Parser` made
+by `New` can be reused, also from several goroutines.
 
-1.  **Define the interface:**
-    ```go
-    type LoaderValidator interface {
-        Validate() error
-    }
-    ```
+## Limitations
 
-2.  **Integrated into the load process:** We modified the existing configuration loading function(s) to include a check for this interface. The execution flow should be:
-    *   Load the configuration (e.g., from YAML/JSON).
-    *   Run basic validation (e.g., the existing `ValidateRequiredFields`).
-    *   **Check if the loaded config struct implements `LoaderValidator`.**
-    *   If it does, call the `config.Validate()` method and return any error it produces.
-
-**A user can now easily add sophisticated validation to their config:**
-```go
-// User's configuration struct
-type AppConfig struct {
-    Port     int    `yaml:"port" required:"true"`
-    Username string `yaml:"username" required:"true"`
-    Email    string `yaml:"email"`
-}
-
-// Implement the LoaderValidator interface
-func (c *AppConfig) Validate() error {
-    // Custom validation 1: Check if port is in the valid range
-    if c.Port < 1024 || c.Port > 65535 {
-        return fmt.Errorf("port must be between 1024 and 65535, got %d", c.Port)
-    }
-
-    // Custom validation 2: Check email format if provided
-    if c.Email != "" {
-        if !isValidEmail(c.Email) {
-            return fmt.Errorf("invalid email format: %s", c.Email)
-        }
-    }
-    return nil
-}
-
-// Helper function (user-defined)
-func isValidEmail(email string) bool {
-    // ... simple regex check for example purposes
-    re := regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
-    return re.MatchString(email)
-}
-```
-
-With this implementation, when the user loads their `AppConfig`, the system will automatically check that `Port` 
-and `Username` are provided (basic validation) and *then* run the custom checks to ensure the port number is acceptable 
-and the email format is valid.
-
-*   **Backward Compatible:** This is a purely additive change. Existing code without the `Validate()` method will continue to work unchanged.
-*   **Clean and Idiomatic:** It follows Go's common pattern of using interfaces for extensibility (e.g., `Stringer`, `Error`).
-*   **Powerful and Flexible:** Users are no longer limited to just `required` checks and can implement any validation logic their application requires (cross-field validation, business logic, formatting, etc.).
-*   **Centralized Validation:** The validation logic lives alongside the data structure it validates, making the code more organized and maintainable.
+- `default` tags: no `[]time.Duration` or lists of `TextUnmarshaler` types; map values cannot contain `:`;
+  `net.IPMask` is IPv4 only.
+- Pointers to structs are not walked: `default`, `required` and flags inside them are ignored
+  (environment variables and files do fill them).
+- Flags: no maps, `int8`, `int16`, `uint8`, `uint16` or named types such as `type Port int`.
+- `Validate()` is called for the struct passed to `Load` only, not for nested structs.
+- Positional arguments are not available after loading.
 
 ## Upgrading to v0.7
 
