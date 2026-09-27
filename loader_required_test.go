@@ -40,7 +40,9 @@ type NestedAnonymous struct {
 
 func TestMissingFields(t *testing.T) {
 	var cfg User
-	require.ErrorIs(t, Load(&cfg), ErrMissingFields)
+	err := Load(&cfg)
+	require.ErrorIs(t, err, ErrMissingFields)
+	require.ErrorContains(t, err, "gonfig: missing required fields:")
 }
 
 // TestValidateRequiredFields tests ValidateRequiredFields function using various test cases.

@@ -412,7 +412,7 @@ func (l *loader) load(v any) error {
 	}
 
 	if err := ValidateRequiredFields(v); err != nil {
-		return err
+		return fmt.Errorf("gonfig: %w", err)
 	}
 
 	return validate(v)
