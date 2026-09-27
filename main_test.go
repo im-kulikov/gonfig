@@ -13,7 +13,11 @@ import (
 func TestMain(m *testing.M) {
 	flag.Parse() // the -test.* flags, before they are cleared
 
-	os.Args = os.Args[:1]
+	// The fuzzing coordinator starts its workers with os.Args; fuzz targets set Config.Args.
+	if flag.Lookup("test.fuzz").Value.String() == "" {
+		os.Args = os.Args[:1]
+	}
+
 	os.Clearenv()
 
 	os.Exit(m.Run())
