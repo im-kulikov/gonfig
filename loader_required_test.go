@@ -73,9 +73,10 @@ func TestValidateRequiredFields(t *testing.T) {
 			wantErr: true,
 			errMsg: "missing required fields:\n\t" +
 				"- field `Name` <string> is required\n\t" +
-				"- field `Email` <string> is required\n\t- field `IP` <net.IP> is required\n\t" +
+				"- field `Email` <string> is required\n\t" +
 				"- field `City` <string> in path `Address.City` is required\n\t" +
-				"- field `Country` <string> in path `Address.Country` is required",
+				"- field `Country` <string> in path `Address.Country` is required\n\t" +
+				"- field `IP` <net.IP> is required",
 		},
 		{
 			name: "Missing nested structure required fields",
