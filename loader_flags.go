@@ -94,8 +94,29 @@ func newFlagsLoader(l *loader) *parserFunc {
 
 		set.SetOutput(l.buffer)
 
-		return set.Parse(l.Args)
+		if err := set.Parse(l.Args); err != nil {
+			return err
+		}
+
+		return setPositionalArgs(val, set.Args())
 	}}
+}
+
+// setPositionalArgs gives the arguments left after the flags (all after "--" too) to
+// the []string fields tagged `flag:",args"`. Without arguments the field keeps the
+// value of the other sources, a `default` tag for example.
+func setPositionalArgs(dest any, args []string) error {
+	for elem := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True()}) { // PrepareFlags has checked dest
+		switch {
+		case !ParseTagOptions(elem.Field.Tag).FlagArgs:
+		case elem.Value.Type() != reflect.TypeFor[[]string]():
+			return fmt.Errorf("(flags) field %s: `flag:\",args\"` needs []string, got %s", elem.Field.Name, elem.Value.Type())
+		case len(args) > 0:
+			elem.Value.Set(reflect.ValueOf(args))
+		}
+	}
+
+	return nil
 }
 
 // PrepareFlags prepares flags for the given flag set based on the fields of the destination struct.

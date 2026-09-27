@@ -50,6 +50,7 @@ type TagOptions struct {
 	FlagFullName   string
 	FlagShortName  string
 	FlagConfig     bool
+	FlagArgs       bool // `flag:",args"`: the field gets the positional arguments
 	FieldRequired  bool
 	FieldSecret    bool
 	FieldIgnored   bool
@@ -131,6 +132,10 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 
 		if strings.EqualFold(elem, "config:true") {
 			opt.FlagConfig = true
+		}
+
+		if elem == "args" && tmp[0] == "" {
+			opt.FlagArgs = true
 		}
 	}
 

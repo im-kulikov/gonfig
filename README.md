@@ -88,6 +88,7 @@ turns off the config path). After loading, `required` fields are checked and `Va
 | `flag` | `flag:"port,short:p"` | Command-line flag and its one-letter shorthand; `flag:"-"` ignores the field |
 | | `flag:"key,base:hex"` | Encoding of a `[]byte` flag: `hex` or `b64` |
 | | `flag:"config,short:c,config:true"` | The string field is the path of the config file |
+| | `flag:",args"` | The `[]string` field gets the positional arguments |
 | `yaml`, `json`, `toml` | `yaml:"port"`, `yaml:",inline"` | Key in a config file; `,inline` inlines a nested struct; `-` ignores the field |
 | `usage` | `usage:"server port"` | Description in `--help` and in exported configs |
 | `required` | `required:"true"` | Loading fails if the field is still its zero value |
@@ -170,6 +171,18 @@ the same flag on two fields.
 `--help` prints every flag with the default from its `default` tag, never a value loaded from a file or
 the environment, then every environment variable, and exits with code 0. `WithCustomOutput` and
 `WithCustomExit` redirect the output and replace `os.Exit`; `Load` then returns `ErrTestExit`.
+
+Positional arguments, the ones left after the flags and all after `--`, go to a `[]string` field tagged
+`flag:",args"`; with `required:"true"` at least one is needed. They are not configuration, so
+`--print-config` leaves them out. The path of the config file is in your own field, tagged
+`flag:"config,short:c,config:true"`, instead of `DefaultConfigFlag`:
+
+```go
+type Config struct {
+	Path  string   `flag:"config,short:c,config:true"` // ./app -c app.yaml a.txt b.txt
+	Files []string `flag:",args" required:"true"`      // [a.txt b.txt]
+}
+```
 
 Flags of `go test` (`-test.*`) are ignored. In tests set `Args` and `Envs` through `WithConfig`, so the
 result does not depend on how the tests are run.
@@ -325,7 +338,6 @@ by `New` can be reused, also from several goroutines.
 
 - `default` tags: list items and map entries cannot contain `,`, map keys cannot contain `:`.
 - No flags inside sections (pointers to structs), see [Sections](#sections).
-- Positional arguments are not available after loading.
 
 ## Upgrading to v0.7
 
