@@ -39,3 +39,31 @@ func TestFlags_DefinedTwice(t *testing.T) {
 	}
 	require.ErrorIs(t, Load(&printConfig, WithConfig(noArgs)), ErrFlagRedefined)
 }
+
+// M-10: a custom parser of a built-in type replaced the parser but was called twice.
+func TestCustomParser_ReplacesBuiltin(t *testing.T) {
+	calls := 0
+	env := NewCustomParser(ParserEnv, func(any) error { calls++; return nil })
+
+	var v struct {
+		Name string `env:"NAME"`
+	}
+	require.NoError(t, Load(&v, WithConfig(noArgs), WithCustomParser(env)))
+
+	assert.Equal(t, 1, calls)
+	assert.Empty(t, v.Name, "the built-in env loader is replaced")
+}
+
+func TestCustomParser_OncePerLoad(t *testing.T) {
+	calls := 0
+	custom := func(any) error { calls++; return nil }
+	parser := New(Config{}, WithConfig(noArgs),
+		WithCustomParser(NewCustomParser("custom", custom)),
+		WithCustomParser(NewCustomParser("custom", custom))) // the same type twice: the last one wins
+
+	var v struct{}
+	require.NoError(t, parser.Load(&v))
+	require.NoError(t, parser.Load(&v))
+
+	assert.Equal(t, 2, calls, "once per Load, however many times options are applied")
+}
