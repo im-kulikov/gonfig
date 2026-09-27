@@ -150,6 +150,16 @@ name, case-insensitive), embedded structs and `,inline` fields are inlined, and 
 same way, so `"3s"` is a duration in YAML, JSON and TOML alike. An empty file, or one with comments only,
 changes nothing.
 
+`FromFS(fsys)` makes a loader read the config path from an `fs.FS`: an `embed.FS` with a config built
+into the binary, or a `fstest.MapFS` in tests. The path is then a path in `fsys` (`configs/app.yaml`):
+
+```go
+//go:embed configs
+var configs embed.FS
+
+err := gonfig.Load(&cfg, gonfig.WithYAMLLoader(gonfig.FromFS(configs)))
+```
+
 By default keys of a config file that match no field are ignored. With `gonfig.WithStrict()` (or
 `Config{Strict: true}`) such a key, usually a typo, is an error:
 
@@ -323,7 +333,7 @@ func (c *CustomLoader) Type() gonfig.ParserType {
 
 | Option | Effect |
 |---|---|
-| `WithYAMLLoader()`, `WithJSONLoader()`, `WithTOMLLoader()` | Read the config file in this format |
+| `WithYAMLLoader()`, `WithJSONLoader()`, `WithTOMLLoader()` | Read the config file in this format; `FromFS(fsys)` reads it from an `fs.FS` |
 | `WithStrict()` | Keys of a config file that match no field are an error |
 | `WithConfig(func(*Config))` | Change `EnvPrefix`, `Skip*`, `Strict`, `Args`, `Envs` |
 | `WithDefaults(tag, map)` | Defaults from a map |

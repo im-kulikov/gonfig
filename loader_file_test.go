@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -16,7 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func testFileLoader(t *testing.T, kind ParserType, options ...fileLoaderOption) *fileLoader {
+func testFileLoader(t *testing.T, kind ParserType, options ...FileOption) *fileLoader {
 	t.Helper()
 
 	tmp, err := initFileLoader(kind, options)(Config{})
@@ -399,4 +400,29 @@ func TestFileLoaders_ByExtension(t *testing.T) {
 		}))...), tt.file)
 		assert.NotEmpty(t, v.Name, tt.file)
 	}
+}
+
+// M-15: a file loader reading from an fs.FS, such as embed.FS or fstest.MapFS.
+func TestFromFS(t *testing.T) {
+	fsys := fstest.MapFS{"configs/app.yaml": {Data: []byte("name: from-fs\n")}}
+	load := func(path string) (string, error) {
+		var v struct {
+			DefaultConfigFlag
+
+			Name string `yaml:"name"`
+		}
+
+		err := Load(&v, WithYAMLLoader(FromFS(fsys)), WithConfig(func(c *Config) {
+			c.Args, c.Envs = []string{"--config", path}, []string{}
+		}))
+
+		return v.Name, err
+	}
+
+	name, err := load("./configs/app.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "from-fs", name)
+
+	_, err = load("configs/missing.yaml")
+	require.ErrorIs(t, err, ErrCantOpen)
 }
