@@ -22,6 +22,11 @@ linters:
     - revive
     - unconvert
     - whitespace
+  exclusions:
+    rules:
+      # Repeated literals are the point of table-driven tests.
+      - path: _test\.go
+        linters: [goconst]
 
 run:
   relative-path-mode: gomod # cfg, wd, gomod, gitroot.
