@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -96,19 +97,12 @@ func TestLoadEnvs(t *testing.T) {
 
 // Тестирование случая с ошибкой в LoadEnvs
 func TestLoadEnvs_Error(t *testing.T) {
-	invalidEnvs := map[string]any{
-		"HELLO": "invalid structure", // Здесь должна быть вложенная карта, но передана строка
-	}
-
-	// Ожидаемая структура
 	type Config struct {
-		Hello struct {
-			World string `env:"WORLD"`
-		} `env:"HELLO"`
+		Port int `env:"PORT"`
 	}
 
 	var config Config
-	require.Error(t, LoadEnvs(invalidEnvs, &config))
+	require.ErrorIs(t, LoadEnvs(map[string]any{"PORT": "not a number"}, &config), ErrDecode)
 }
 
 func TestLoadEnvs_custom(t *testing.T) {
@@ -374,4 +368,70 @@ func TestEnvPrefix_Consistent(t *testing.T) {
 		require.NoError(t, Write(&out, &v, FormatEnv, WithEnvPrefix(prefix)))
 		assert.Equal(t, "APP_NAME=\n", out.String(), prefix)
 	}
+}
+
+// M-08: a variable named like a field with nested names broke the whole loading,
+// depending on the order of the environment.
+func TestLoadEnvs_NameClash(t *testing.T) {
+	type settings struct {
+		DB struct {
+			Host string `env:"HOST"`
+		} `env:"DB"`
+		Name   string            `env:"NAME"`
+		Other  string            `env:"OTHER"`
+		Hosts  []string          `env:"HOSTS"`
+		Labels map[string]string `env:"LABELS"`
+		Since  time.Time         `env:"SINCE"`
+	}
+
+	envs := []string{
+		"DB=postgres://db", "DB_HOST=h", // a struct and a variable of its name
+		"NAME=n", "NAME_SUFFIX=x", // a string and an unrelated variable below it
+		"OTHER_SUFFIX=x", // only the unrelated one
+		"HOSTS=a,b", "HOSTS_EXTRA=x",
+		"LABELS=x", "LABELS_team=core",
+		"SINCE=2026-09-28T00:00:00Z", "SINCE_EPOCH=x", // a TextUnmarshaler struct
+	}
+
+	reversed := slices.Clone(envs)
+	slices.Reverse(reversed)
+
+	for _, order := range [][]string{envs, reversed} {
+		var v settings
+		require.NoError(t, LoadEnvs(PrepareEnvs(order, ""), &v))
+
+		assert.Equal(t, "h", v.DB.Host)
+		assert.Equal(t, "n", v.Name)
+		assert.Empty(t, v.Other)
+		assert.Equal(t, []string{"a", "b"}, v.Hosts)
+		assert.Equal(t, map[string]string{"team": "core"}, v.Labels)
+		assert.Equal(t, time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC), v.Since)
+	}
+}
+
+type clashEmbedded struct {
+	Level string `env:"LEVEL"`
+}
+
+func TestLoad_NameClashKeepsOtherSources(t *testing.T) {
+	var v struct {
+		clashEmbedded // its fields read from the same level
+
+		Other   string `env:"OTHER" default:"from-default"`
+		Mode    string `env:"MODE"`
+		Pointer *struct {
+			Host string `env:"HOST"`
+		} `env:"PTR"`
+	}
+
+	require.NoError(t, Load(&v, WithConfig(func(c *Config) {
+		c.Args = []string{}
+		c.Envs = []string{"OTHER_SUFFIX=x", "LEVEL=debug", "LEVEL_X=x", "PTR=x", "PTR_HOST=h", "mode=m", "mode_x=x"}
+	})))
+
+	assert.Equal(t, "from-default", v.Other, "an unrelated OTHER_SUFFIX does not reset OTHER")
+	assert.Equal(t, "debug", v.Level)
+	assert.Equal(t, "m", v.Mode, "names match case-insensitively, as in mapstructure")
+	require.NotNil(t, v.Pointer)
+	assert.Equal(t, "h", v.Pointer.Host)
 }
