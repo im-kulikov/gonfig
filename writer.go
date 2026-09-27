@@ -213,7 +213,7 @@ func (w walker) key(field reflect.StructField) (key string, inline, skip bool) {
 	parts := strings.Split(field.Tag.Get(w.tag), ",")
 
 	switch {
-	case parts[0] == "-":
+	case parts[0] == "-", ParseTagOptions(field.Tag).FlagArgs: // positional arguments are not configuration
 		return "", false, true
 	case field.Type.Kind() == reflect.Struct && !isTextValue(field.Type) &&
 		(field.Anonymous || slices.Contains(parts[1:], w.inline)):
