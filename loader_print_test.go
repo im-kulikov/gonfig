@@ -110,3 +110,11 @@ func TestPrintConfig_LoadsBack(t *testing.T) {
 		assert.Equal(t, printSettings{Host: "localhost", Port: 9090, Required: "set"}, got)
 	}
 }
+
+func TestPrintConfigFlag_IsPrintConfig(t *testing.T) {
+	PrintConfigFlag{}.IsPrintConfig()
+
+	type nested struct{ PrintConfigFlag }
+	assert.True(t, containsMarker(&struct{ nested }{}, printMarkerType))
+	assert.False(t, containsMarker(&struct{ DefaultConfigFlag }{}, printMarkerType))
+}
