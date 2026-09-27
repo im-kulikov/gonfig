@@ -86,9 +86,9 @@ func TestPrintConfig_Errors(t *testing.T) {
 
 		Print string `flag:"print-config"`
 	}
-	require.ErrorContains(t, Load(&conflict, WithConfig(func(c *Config) {
+	require.ErrorIs(t, Load(&conflict, WithConfig(func(c *Config) {
 		c.Args, c.Envs = []string{}, []string{}
-	})), "--print-config is defined by both")
+	})), ErrFlagRedefined)
 
 	var without struct {
 		Host string `flag:"host"`
