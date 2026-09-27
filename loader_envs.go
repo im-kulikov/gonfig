@@ -228,7 +228,7 @@ func wrapUsageLoader(l *loader, handler func(any) error) func(any) error {
 	}
 }
 
-func writeln(out io.Writer, a ...interface{}) {
+func writeln(out io.Writer, a ...any) {
 	_, _ = fmt.Fprintln(out, a...)
 }
 
@@ -326,7 +326,7 @@ func decodeEnv() mapstructure.DecodeHookFunc {
 
 			raw := strings.Split(str, ",")
 			tmp := reflect.MakeSlice(t.Type(), len(raw), len(raw))
-			for i := 0; i < len(raw); i++ {
+			for i := range raw {
 				from := reflect.ValueOf(raw[i])
 				to := reflect.New(t.Type().Elem()).Elem()
 

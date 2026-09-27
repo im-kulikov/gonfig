@@ -33,6 +33,10 @@ type reflectNestedStruct struct {
 	AnotherField int
 }
 
+func TestPtr(t *testing.T) {
+	assert.Equal(t, 42, *Ptr(42))
+}
+
 func TestReflectFieldsOf(t *testing.T) {
 	t.Run("non-pointer", func(t *testing.T) {
 		for _, err := range ReflectFieldsOf(ReflectStruct{}, ReflectOptions{}) {
@@ -60,7 +64,7 @@ func TestReflectFieldsOf(t *testing.T) {
 
 		for i, tt := range cases {
 			t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-				output := make([]*ReflectValue, 0, reflect.TypeOf(ReflectStruct{}).NumField())
+				output := make([]*ReflectValue, 0, reflect.TypeFor[ReflectStruct]().NumField())
 				for elem, err := range ReflectFieldsOf(&ReflectStruct{}, tt.Options) {
 					assert.NoError(t, err)
 
