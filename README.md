@@ -76,7 +76,7 @@ import (
 
 type Config struct {
 	Config string `flag:"config,short:c,config:true"`
-	Field  string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" require:"true"`
+	Field  string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" required:"true"`
 }
 
 // go run /path/to/main/folder --config /path/to/config.yml
@@ -172,7 +172,7 @@ import (
 )
 
 type Config struct {
-	Field string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" require:"true"`
+	Field string `flag:"field" env:"FIELD" default:"default-value" usage:"description for flags" required:"true"`
 }
 
 func main() {
@@ -266,11 +266,7 @@ func main() {
 }
 ```
 
-## Custom Loaders
-
-You can implement your own configuration loaders by implementing the `Parser` interface.
-
-### Nested Configurations
+## Nested Configurations
 
 When using nested structs, you can either provide an environment name for each level, or use the `squash` option to expose underlying fields directly.
 
@@ -283,19 +279,28 @@ type Config struct {
         } `env:"API"`
     } `env:"ACT"`
 
-    // Exposes DB_HOST (skips intermediate 'Database' name)
+    // Exposes DB_HOST
     Database struct {
         Host string `env:"HOST"`
+    } `env:"DB"`
+
+    // Exposes PORT: squash inlines the fields into the parent, without a prefix
+    Server struct {
+        Port int `env:"PORT"`
     } `env:",squash"`
 }
 ```
 
-If a nested struct has an empty `env:""` tag and is not squashed, its fields will **not** be reachable via environment variables and will be hidden from the help output.
+If a nested struct has no `env` tag and is not squashed, its fields will **not** be reachable via environment variables and will be hidden from the help output. Embedded structs are always inlined, as with `squash`.
+
+## Custom Loaders
+
+You can implement your own configuration loaders by implementing the `Parser` interface and registering it with `WithCustomParser`:
 
 ```go
-type CustomLoader struct {}
+type CustomLoader struct{}
 
-func (c *CustomLoader) Load(dest interface{}) error {
+func (c *CustomLoader) Load(dest any) error {
 	// Custom loading logic here
 	return nil
 }
@@ -303,20 +308,34 @@ func (c *CustomLoader) Load(dest interface{}) error {
 func (c *CustomLoader) Type() gonfig.ParserType {
 	return "custom-loader"
 }
+
+func main() {
+	var cfg Config
+	if err := gonfig.Load(&cfg, gonfig.WithCustomParser(&CustomLoader{})); err != nil {
+		panic(err)
+	}
+}
 ```
 
-or with config-path defining
+Custom loaders run after defaults and before environment variables and flags, in the order they were added.
+A loader with the type of a built-in one (`gonfig.ParserEnv`, `gonfig.ParserFlags`, `gonfig.ParserDefaults`) replaces it.
+
+To read a file, implement `ParserConfigSetter` as well: the loader passes it the path from `--config`
+(with `DefaultConfigFlag`) or from the field tagged `flag:"...,config:true"`, right before `Load`:
 
 ```go
 type CustomLoader struct {
 	path string
 }
 
-func (c *CustomLoader) SetPath(path string) { c.path = path }
+func (c *CustomLoader) SetConfigPath(path string) { c.path = path }
 
-func (c *CustomLoader) Load(dest interface{}) error {
-	// Custom loading logic here
-	// for example - json / toml / etc
+func (c *CustomLoader) Load(dest any) error {
+	if c.path == "" {
+		return nil // no --config given
+	}
+
+	// read c.path and decode it into dest
 	return nil
 }
 
