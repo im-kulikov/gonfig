@@ -314,10 +314,10 @@ func TestPrepareFlags_Errors(t *testing.T) {
 	// wrong dest (not structure)
 	require.Error(t, PrepareFlags(flagSet, new(int)))
 
-	// unknown type
-	require.Error(t, PrepareFlags(flagSet, &struct {
-		UnknownType []complex64 `flag:"complex"`
-	}{}))
+	// unknown type: nothing parses a func from a string
+	require.ErrorContains(t, PrepareFlags(flagSet, &struct {
+		UnknownType func() `flag:"func"`
+	}{}), "unknown type: *func()")
 
 	// unknown []byte decoder
 	require.Error(t, PrepareFlags(flagSet, &struct {
