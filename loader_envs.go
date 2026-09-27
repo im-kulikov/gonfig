@@ -165,7 +165,9 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 			usage = " — " + usage
 		}
 
-		if tmp := field.Field.Tag.Get(defaultTagName); tmp != "" {
+		if isSecret(field) {
+			usage += " (secret)"
+		} else if tmp := field.Field.Tag.Get(defaultTagName); tmp != "" {
 			usage += fmt.Sprintf(" (default: %s)", tmp)
 		}
 

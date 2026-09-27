@@ -82,9 +82,28 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 		if err = prepareFlag(flagSet, elem.Value, options); err != nil {
 			return fmt.Errorf("(flags) %w", err)
 		}
+
+		flagSet.Lookup(options.FlagFullName).DefValue = flagDefault(elem, options)
 	}
 
 	return nil
+}
+
+// flagDefault is what --help shows as the default of a flag: the `default` tag,
+// formatted by pflag for the flag's type. The flag itself is registered with the
+// current value, which may already come from env or a file and hold a secret.
+// A secret shows no default at all.
+func flagDefault(elem *ReflectValue, options TagOptions) string {
+	value := reflect.New(elem.Value.Type()).Elem()
+	if !isSecret(elem) {
+		// An invalid default has already failed the defaults parser.
+		_ = applyDefault(value, elem.Field.Tag.Get(defaultTagName))
+	}
+
+	scratch := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
+	_ = prepareFlag(scratch, value, options) // the same type has just been registered
+
+	return scratch.Lookup(options.FlagFullName).DefValue
 }
 
 // parseConfigPath creates a Parser responsible for handling the "config-path" functionality.
