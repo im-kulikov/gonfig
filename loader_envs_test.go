@@ -435,3 +435,19 @@ func TestLoad_NameClashKeepsOtherSources(t *testing.T) {
 	require.NotNil(t, v.Pointer)
 	assert.Equal(t, "h", v.Pointer.Host)
 }
+
+// A variable named like a struct or a map, with no nested names at all: ignored.
+func TestLoadEnvs_NameOfContainerAlone(t *testing.T) {
+	var v struct {
+		DB struct {
+			Host string `env:"HOST" default:"localhost"`
+		} `env:"DB"`
+		Labels map[string]string `env:"LABELS"`
+	}
+
+	require.NoError(t, SetDefaults(&v))
+	require.NoError(t, LoadEnvs(PrepareEnvs([]string{"DB=postgres://db", "LABELS=x"}, ""), &v))
+
+	assert.Equal(t, "localhost", v.DB.Host)
+	assert.Nil(t, v.Labels)
+}
