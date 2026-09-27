@@ -63,6 +63,9 @@ go get github.com/im-kulikov/gonfig
 
 ## Examples
 
+Each example below has a runnable and tested version in [example_test.go](example_test.go),
+also shown on [pkg.go.dev](https://pkg.go.dev/github.com/im-kulikov/gonfig#pkg-examples).
+
 ### Simple
 
 ```go
@@ -152,10 +155,10 @@ Mark a field with `secret:"true"`, or a whole struct to cover its fields. A secr
 ### Strict mode
 
 By default keys of a config file that match no field are ignored. With `gonfig.WithStrict()` (or
-`Config{Strict: true}`) a typo is an error:
+`Config{Strict: true}`) such a key, usually a typo, is an error:
 
 ```text
-gonfig: could not load: could not parse config.yaml: could not decode: 'main.Config' has invalid keys: adress
+gonfig: could not load: could not parse config.yaml: could not decode: 'main.Config' has invalid keys: listen
 ```
 
 Environment variables are never strict: the environment holds every variable of the process.
