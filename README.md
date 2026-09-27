@@ -56,6 +56,10 @@ go get github.com/im-kulikov/gonfig
 - [x] Load JSON `WithJSONLoader`
 - [x] Load TOML `WithTOMLLoader`
 - [x] Other formats, you can write it using a custom loader
+- [x] One set of rules for every source: embedded structs, `time.Duration`, `net.IPNet`, `encoding.TextUnmarshaler`
+- [x] Strict mode for config files `WithStrict`
+- [x] Secrets `secret:"true"`: hidden in `--help` and in exported configs
+- [x] Export a config `Write` and the `--print-config` flag `PrintConfigFlag`
 
 ## Examples
 
@@ -108,6 +112,53 @@ func main() {
 	}
 }
 ```
+
+### Print the configuration
+
+Embed `PrintConfigFlag` to get `--print-config[=yaml|json|toml|env]`. It prints the loaded configuration
+(defaults, file, env and flags) and exits with code 0, like `--help`. Required fields are not checked,
+so the output of a fresh setup is a documented template, with a comment above every value:
+
+```go
+type Config struct {
+	gonfig.DefaultConfigFlag
+	gonfig.PrintConfigFlag
+
+	Addr  string `yaml:"addr"  env:"ADDR"  default:":8080" usage:"listen address"`
+	Token string `yaml:"token" env:"TOKEN" secret:"true"`
+}
+```
+
+```console
+$ go run . --print-config > config.yaml
+$ cat config.yaml
+# listen address (env: ADDR, default: :8080)
+addr: :8080
+# env: TOKEN, secret
+token: ""
+$ go run . --print-config=env > .env   # for docker --env-file or kubectl create configmap --from-env-file
+```
+
+Without a value the format is the one of the file loader (YAML without one), so the output goes straight
+back into `--config`. The same is available in code: `gonfig.Write(os.Stdout, &cfg, gonfig.FormatTOML)`,
+with `gonfig.WithEnvPrefix(prefix)` when the loader uses `Config.EnvPrefix`.
+
+### Secrets
+
+Mark a field with `secret:"true"`, or a whole struct to cover its fields. A secret is never shown:
+`--help` prints no default for its flag and lists its environment variable as `(secret)`, `Write` and
+`--print-config` leave it empty. `--help` always shows the `default` tag, not the loaded value.
+
+### Strict mode
+
+By default keys of a config file that match no field are ignored. With `gonfig.WithStrict()` (or
+`Config{Strict: true}`) a typo is an error:
+
+```text
+gonfig: could not load: could not parse config.yaml: could not decode: 'main.Config' has invalid keys: adress
+```
+
+Environment variables are never strict: the environment holds every variable of the process.
 
 ### Extended (using New.Load)
 
@@ -334,3 +385,16 @@ and the email format is valid.
 *   **Clean and Idiomatic:** It follows Go's common pattern of using interfaces for extensibility (e.g., `Stringer`, `Error`).
 *   **Powerful and Flexible:** Users are no longer limited to just `required` checks and can implement any validation logic their application requires (cross-field validation, business logic, formatting, etc.).
 *   **Centralized Validation:** The validation logic lives alongside the data structure it validates, making the code more organized and maintainable.
+
+## Upgrading to v0.7
+
+- Go 1.26 or newer is required; the two latest Go releases are supported.
+- Config files are decoded by the same rules as environment variables. An embedded struct no longer
+  needs `yaml:",inline"`; JSON and TOML accept `"3s"` for `time.Duration` and `"10.0.0.0/8"` for
+  `net.IPNet`; `encoding.TextUnmarshaler` types (`slog.Level`, `time.Time`) work in every source;
+  file keys match field tags case-insensitively; an empty file is not an error.
+- Custom `yaml.Unmarshaler`, `json.Unmarshaler` and TOML unmarshalers of field types are no longer
+  called; implement `encoding.TextUnmarshaler` instead.
+- `--help` shows the `default` tag of a flag instead of its loaded value.
+- Errors are one line and name the file: `could not parse config.yaml: ...`.
+
