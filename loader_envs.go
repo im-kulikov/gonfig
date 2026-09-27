@@ -179,10 +179,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 		opt(&options)
 	}
 
-	var prefix string
-	if options.prefix != "" {
-		prefix = options.prefix + envDelimiter
-	}
+	prefix := envPrefix(options.prefix)
 
 	out := make([]string, 0, len(output))
 	for _, item := range output {
@@ -190,6 +187,16 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	}
 
 	return fmt.Sprintf("Environment variables:\n%s", strings.Join(out, "\n"))
+}
+
+// envPrefix returns the prefix of environment variable names with exactly one
+// trailing "_", so "APP" and "APP_" both mean APP_NAME, and APPLE_X is not included.
+func envPrefix(prefix string) string {
+	if prefix = strings.TrimSuffix(prefix, envDelimiter); prefix == "" {
+		return ""
+	}
+
+	return prefix + envDelimiter
 }
 
 // wrapUsageLoader wraps the provided loader function to add additional functionality
@@ -241,14 +248,13 @@ func writeln(out io.Writer, a ...any) {
 // The resulting map has a nested structure based on the environment variable names,
 // using the specified delimiter for nesting.
 func PrepareEnvs(envs []string, prefix string) map[string]any {
+	prefix = envPrefix(prefix)
+
 	out := make(map[string]any, len(envs))
 	for _, env := range envs {
-		if prefix != "" && !strings.HasPrefix(env, prefix) {
+		var ok bool
+		if env, ok = strings.CutPrefix(env, prefix); !ok {
 			continue
-		}
-
-		if prefix != "" {
-			env = strings.TrimPrefix(env, prefix+envDelimiter)
 		}
 
 		parts := strings.SplitN(env, envPairDelim, 2)

@@ -133,11 +133,7 @@ func (n *node) comment(withEnv bool, prefix string) string {
 }
 
 func prefixed(prefix, name string) string {
-	if prefix == "" {
-		return name
-	}
-
-	return prefix + envDelimiter + name
+	return envPrefix(prefix) + name
 }
 
 // envName is the environment variable of a field, built like the env loader
