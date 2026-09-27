@@ -350,3 +350,28 @@ func TestLoadEnvs_TextUnmarshaler(t *testing.T) {
 	require.NoError(t, LoadEnvs(map[string]any{"LEVEL": "WARN"}, &config))
 	assert.Equal(t, slog.LevelWarn, config.Level)
 }
+
+// M-07: the prefix matches whole segments and may be given with or without "_".
+func TestPrepareEnvs_Prefix(t *testing.T) {
+	envs := []string{"APP_Y=2", "APPLE_X=1", "APPX=3", "APP=4", "OTHER_Y=5"}
+
+	for _, prefix := range []string{"APP", "APP_"} {
+		assert.Equal(t, map[string]any{"Y": "2"}, PrepareEnvs(envs, prefix), prefix)
+	}
+
+	assert.Len(t, PrepareEnvs(envs, ""), 7, "no prefix: every variable, nested keys included")
+}
+
+func TestEnvPrefix_Consistent(t *testing.T) {
+	var v struct {
+		Name string `env:"NAME"`
+	}
+
+	for _, prefix := range []string{"APP", "APP_"} {
+		assert.Contains(t, UsageOfEnvs(&v, EnvUsageWithPrefix(prefix)), "'APP_NAME'", prefix)
+
+		var out strings.Builder
+		require.NoError(t, Write(&out, &v, FormatEnv, WithEnvPrefix(prefix)))
+		assert.Equal(t, "APP_NAME=\n", out.String(), prefix)
+	}
+}

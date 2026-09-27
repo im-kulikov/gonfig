@@ -55,7 +55,9 @@ type Config struct {
 	SkipEnv      bool // SkipEnv set to true will not load config from environment variables.
 	SkipFlags    bool // SkipFlags set to true will not load config from flag parameters.
 
-	EnvPrefix string // EnvPrefix for environment variables.
+	// EnvPrefix limits environment variables to those starting with it: with "APP"
+	// (or "APP_") the field `env:"NAME"` is read from APP_NAME, and APPLE_X is ignored.
+	EnvPrefix string
 
 	// Strict makes file loaders fail on keys that match no field, so a typo
 	// in a config file is an error instead of a silently ignored value.
