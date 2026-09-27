@@ -144,3 +144,20 @@ func TestPointers_SectionWithInvalidDefault(t *testing.T) {
 	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{"SECTION_PORT=1"} }))
 	require.ErrorContains(t, err, `could not parse "not a number"`)
 }
+
+type ptrNode struct {
+	Name string   `env:"NAME"`
+	Next *ptrNode `env:"NEXT"` // a type that contains itself
+}
+
+func TestUsageOfEnvs_Sections(t *testing.T) {
+	v := ptrServer{}
+	usage := UsageOfEnvs(&v)
+
+	assert.Contains(t, usage, "'TLS_ENABLED' <bool>")
+	assert.Contains(t, usage, "'TLS_MIN_VERSION' <string> (default: TLS13)")
+	assert.NotContains(t, usage, "<*gonfig.ptrTLS>")
+	assert.Nil(t, v.TLS, "the struct passed in is not changed")
+
+	assert.Equal(t, "Environment variables:\n  - 'NAME' <string>\n  - 'NEXT' <*gonfig.ptrNode>", UsageOfEnvs(&ptrNode{}))
+}

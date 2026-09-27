@@ -189,6 +189,26 @@ for nested structs. They win over `default` tags and lose to files, environment 
 gonfig.WithDefaults("yaml", map[string]any{"server": map[string]any{"addr": ":9000"}})
 ```
 
+## Sections
+
+A pointer to a struct is a section: `nil` until the code or a source sets it, so a nil section means
+"not configured".
+
+```go
+type Config struct {
+	TLS *struct {
+		Cert       string `yaml:"cert"        env:"CERT"        required:"true"`
+		MinVersion string `yaml:"min_version" env:"MIN_VERSION" default:"TLS13"`
+	} `yaml:"tls" env:"TLS"`
+}
+```
+
+- A section a file or the environment creates starts from its `default` tags, like the root of the
+  config: `TLS_CERT=cert.pem` gives `{Cert: cert.pem, MinVersion: TLS13}`. `tls: null` keeps it nil.
+- In a section that is set, `required` fields are checked (`TLS.Cert`) and `Validate()` is called.
+- `--help` lists the variables of every section (`TLS_CERT`, `TLS_MIN_VERSION`).
+- Flags are not registered inside sections: a section may not exist before the flags are parsed.
+
 ## Secrets
 
 Mark a field with `secret:"true"`, or a whole struct to cover its fields. A secret is never shown:
@@ -304,8 +324,7 @@ by `New` can be reused, also from several goroutines.
 ## Limitations
 
 - `default` tags: list items and map entries cannot contain `,`, map keys cannot contain `:`.
-- Pointers to structs are not walked: `default`, `required`, flags and `Validate()` inside them are
-  ignored (environment variables and files do fill them).
+- No flags inside sections (pointers to structs), see [Sections](#sections).
 - Positional arguments are not available after loading.
 
 ## Upgrading to v0.7
