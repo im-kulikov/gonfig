@@ -179,7 +179,7 @@ func flagDefault(elem *ReflectValue, options TagOptions) string {
 //	parser := parseConfigPath(loaderInstance)
 //	err := parser.Parse(configStruct)  // Parses the config path from the struct tags and command-line arguments.
 func parseConfigPath(l *loader) *parserFunc {
-	return &parserFunc{name: "config-path", call: parseDefaultConfigPath(l, func(val any) error {
+	return &parserFunc{name: ParserConfigSet, call: parseDefaultConfigPath(l, func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 		flags.SetOutput(io.Discard)
 		flags.ParseErrorsAllowlist.UnknownFlags = true

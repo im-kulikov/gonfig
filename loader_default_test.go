@@ -85,9 +85,8 @@ func TestDefaultConfigFlag_Internal(t *testing.T) {
 		var cfg ConfigWithDefault
 		mock := &mockConfigSetter{}
 
-		l := setLoaderDefaults(Config{
-			Args: []string{"--config", "config.yaml"},
-		})
+		l := newLoader(Config{Args: []string{"--config", "config.yaml"}}, &cfg)
+		l.setLoaderDefaults()
 		// Override l.groups to include our mock and execute
 		l.groups["mock"] = mock
 		l.orders = []ParserType{"mock"}
