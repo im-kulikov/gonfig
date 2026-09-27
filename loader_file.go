@@ -40,7 +40,8 @@ const (
 type fileLoader struct {
 	Parser
 
-	path *atomic.Pointer[string]
+	path   *atomic.Pointer[string]
+	strict *atomic.Bool
 }
 
 type fileOpener func(string) (io.ReadCloser, error)
@@ -94,10 +95,14 @@ func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) 
 	}
 
 	return func(_ Config) (Parser, error) {
-		var path atomic.Pointer[string]
+		var (
+			path   atomic.Pointer[string]
+			strict atomic.Bool
+		)
 
 		return &fileLoader{
-			path: &path,
+			path:   &path,
+			strict: &strict,
 
 			Parser: &parserFunc{
 				name: kind,
@@ -108,7 +113,7 @@ func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) 
 					}
 
 					return loadFromFile(&path, settings.open, func(r io.Reader) error {
-						return decodeFile(format, r, v)
+						return decodeFile(format, r, v, strict.Load())
 					})
 				},
 			},
@@ -119,6 +124,10 @@ func initFileLoader(kind ParserType, options []fileLoaderOption) func(_ Config) 
 // SetConfigPath sets the path to the configuration file.
 func (y *fileLoader) SetConfigPath(filename string) {
 	y.path.Store(&filename)
+}
+
+func (y *fileLoader) setStrict(strict bool) {
+	y.strict.Store(strict)
 }
 
 func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.Reader) error) (err error) {
@@ -150,7 +159,7 @@ func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.
 // decodeFile reads a file into a generic map and decodes it by the same rules as
 // environment variables: embedded structs are inlined, strings are converted by
 // the shared hooks (durations, IP networks, encoding.TextUnmarshaler).
-func decodeFile(format fileFormat, r io.Reader, dest any) error {
+func decodeFile(format fileFormat, r io.Reader, dest any, strict bool) error {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -161,7 +170,12 @@ func decodeFile(format fileFormat, r io.Reader, dest any) error {
 		return err // an empty file or one with comments only changes nothing
 	}
 
-	return decodeMap(dest, tree, decodeOptions{tag: format.tag, inline: fileInlineOption, untagged: true})
+	return decodeMap(dest, tree, decodeOptions{
+		tag:      format.tag,
+		inline:   fileInlineOption,
+		untagged: true,
+		strict:   strict,
+	})
 }
 
 // parseJSON keeps numbers as json.Number, so int64 values beyond 2^53 are not
