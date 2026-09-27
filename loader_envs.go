@@ -382,6 +382,23 @@ func lookupKey(tree map[string]any, name string) (string, bool) {
 	return "", false
 }
 
+// sectionDefaultsHook gives a section a source is about to create, a nil pointer to a
+// struct, the values of its `default` tags first, as the root of the config has them;
+// the source then overrides what it sets. A section no source sets stays nil.
+func sectionDefaultsHook(from, to reflect.Value) (any, error) {
+	if to.Kind() == reflect.Pointer && to.IsNil() && to.CanSet() &&
+		to.Type().Elem().Kind() == reflect.Struct && !textStruct(to.Type().Elem()) {
+		section := reflect.New(to.Type().Elem())
+		if err := SetDefaults(section.Interface()); err != nil {
+			return nil, err
+		}
+
+		to.Set(section)
+	}
+
+	return from.Interface(), nil
+}
+
 // textStruct reports whether a struct is read from a string: net.IPNet, time.Time
 // or any other encoding.TextUnmarshaler.
 func textStruct(t reflect.Type) bool {
@@ -483,7 +500,7 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 		SquashTagOption:      options.inline,
 		IgnoreUntaggedFields: !options.untagged,
 		ErrorUnused:          options.strict,
-		DecodeHook:           decodeHooks(),
+		DecodeHook:           mapstructure.ComposeDecodeHookFunc(sectionDefaultsHook, decodeHooks()),
 	}
 
 	if options.env {
