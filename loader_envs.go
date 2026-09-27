@@ -323,7 +323,8 @@ func PrepareEnvs(envs []string, prefix string) map[string]any {
 func insertIntoMap(m map[string]any, keys []string, value any) {
 	setLeaf(m, strings.Join(keys, envDelimiter), value)
 
-	if len(keys) == 1 {
+	// A name with an empty segment (A__B, _A, A_) is not nested: "" is the key of the own value.
+	if len(keys) == 1 || slices.Contains(keys, "") {
 		return
 	}
 
