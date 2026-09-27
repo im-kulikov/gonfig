@@ -3,6 +3,7 @@ package gonfig
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,4 +74,73 @@ func TestReflectFieldsOf_Pointers(t *testing.T) {
 		names = append(names, elem.Field.Name)
 	}
 	assert.Equal(t, []string{"TLS"}, names, "a nil pointer is a field")
+}
+
+// A section created by a source starts from its defaults, like the root of the config.
+func TestPointers_SectionCreatedByFile(t *testing.T) {
+	type settings struct {
+		DefaultConfigFlag
+		ptrServer `yaml:",inline"`
+	}
+
+	cases := map[string]*ptrTLS{
+		"other: 1\n":        nil,
+		"tls: null\n":       nil,
+		"tls:\n  cert: c\n": {Cert: "c", MinVersion: "TLS13"},
+		"tls:\n  cert: c\n  min_version: TLS12\n": {Cert: "c", MinVersion: "TLS12"},
+	}
+
+	for content, want := range cases {
+		path := writeTempFile(t, "config.yaml", content)
+
+		var v settings
+		require.NoError(t, Load(&v, WithYAMLLoader(), WithConfig(func(c *Config) {
+			c.Args, c.Envs = []string{"--config", path}, []string{}
+		})), content)
+		assert.Equal(t, want, v.TLS, content)
+	}
+}
+
+// The case of go-bones: TLS enabled through the environment lost min_version.
+func TestPointers_SectionCreatedByEnv(t *testing.T) {
+	var v ptrServer
+	require.NoError(t, Load(&v, WithConfig(func(c *Config) {
+		c.Args, c.Envs = []string{}, []string{"TLS_ENABLED=true", "TLS_CERT=c"}
+	})))
+	assert.Equal(t, &ptrTLS{Enabled: true, Cert: "c", MinVersion: "TLS13"}, v.TLS)
+
+	v = ptrServer{}
+	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{"TLS_ENABLED=true"} }))
+	require.ErrorIs(t, err, ErrMissingFields, "a created section checks its required fields")
+}
+
+func TestPointers_NotSections(t *testing.T) {
+	var v struct {
+		Since *time.Time `env:"SINCE"` // a text value, not a section
+		Port  *int       `env:"PORT"`
+		Inner *struct {
+			Deeper *ptrTLS `env:"DEEPER"`
+			Name   string  `env:"NAME" default:"inner"`
+		} `env:"INNER"`
+	}
+
+	require.NoError(t, Load(&v, WithConfig(func(c *Config) {
+		c.Args, c.Envs = []string{}, []string{"SINCE=2026-09-28T00:00:00Z", "PORT=1", "INNER_OTHER=x"}
+	})))
+	assert.Equal(t, time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC), *v.Since)
+	assert.Equal(t, 1, *v.Port)
+	require.NotNil(t, v.Inner, "INNER_OTHER creates the section")
+	assert.Equal(t, "inner", v.Inner.Name)
+	assert.Nil(t, v.Inner.Deeper, "a nested section nobody set stays nil")
+}
+
+func TestPointers_SectionWithInvalidDefault(t *testing.T) {
+	var v struct {
+		Section *struct {
+			Port int `env:"PORT" default:"not a number"`
+		} `env:"SECTION"`
+	}
+
+	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{"SECTION_PORT=1"} }))
+	require.ErrorContains(t, err, `could not parse "not a number"`)
 }
