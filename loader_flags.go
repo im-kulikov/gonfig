@@ -1,11 +1,13 @@
 package gonfig
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -149,8 +151,20 @@ func flagDefault(elem *ReflectValue, options TagOptions) string {
 	scratch := pflag.NewFlagSet(FlagSetName, pflag.ContinueOnError)
 	_ = prepareFlag(scratch, value, options) // the same type has just been registered
 
-	return scratch.Lookup(options.FlagFullName).DefValue
+	flag := scratch.Lookup(options.FlagFullName)
+
+	// pflag hides a zero default by comparing it with the zero text of the flag type,
+	// and knows "[]" only for these lists: other lists and maps would show
+	// "(default [])". For them an empty default is the zero text.
+	if value.IsZero() && flag.DefValue == "[]" && !slices.Contains(pflagZeroLists, flag.Value.Type()) {
+		return ""
+	}
+
+	return flag.DefValue
 }
+
+// pflagZeroLists are the flag types whose zero default pflag recognizes as "[]".
+var pflagZeroLists = []string{"intSlice", "stringSlice", "stringArray"}
 
 // parseConfigPath returns the parser of the ParserConfigSet step: it pre-scans the
 // arguments for the config path, from --config/-c with DefaultConfigFlag or from the
@@ -258,188 +272,174 @@ func containsMarker(val any, marker reflect.Type) bool {
 	return false
 }
 
-// prepareFlag sets up a flag in the given flag set based on the field's type and the provided struct field information.
-// It configures the flag with its name, short name, and usage description and binds it to the field's value.
-// Returns an error if the flag setup fails.
+// prepareFlag registers the flag of a field. A type pflag has a flag for gets it,
+// with pflag's parsing: a bool flag needs no value, a repeated slice flag appends.
+// Any other type the `default` tag can parse, such as a named type (type Port int),
+// an encoding.TextUnmarshaler (slog.Level), a pointer or a map, gets a fieldValue.
 //
-//nolint:gocognit,gocyclo,funlen
+//nolint:gocyclo,funlen // one line per type pflag supports
 func prepareFlag(flagSet *pflag.FlagSet, field reflect.Value, info TagOptions) error {
-	switch val := field.Addr().Interface().(type) {
-	case *bool: // Handle boolean flags
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.BoolVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.BoolVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+	name, usage := info.FlagFullName, info.FieldUsage
 
-	// Handle integer flags
-	case *int:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IntVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IntVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *int32:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Int32VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Int32Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *int64:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Int64VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Int64Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+	short := info.FlagShortName
+	if short == "-" {
+		short = ""
+	}
 
-	// Handle unsigned integer flags
-	case *uint:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.UintVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.UintVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *uint32:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Uint32VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Uint32Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *uint64:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Uint64VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Uint64Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle float flags
-	case *float32:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Float32VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Float32Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *float64:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Float64VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Float64Var(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle string flags
+	switch p := field.Addr().Interface().(type) {
+	case *bool:
+		flagSet.BoolVarP(p, name, short, *p, usage)
 	case *string:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.StringVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.StringVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle time.Duration flags
+		flagSet.StringVarP(p, name, short, *p, usage)
+	case *int:
+		flagSet.IntVarP(p, name, short, *p, usage)
+	case *int8:
+		flagSet.Int8VarP(p, name, short, *p, usage)
+	case *int16:
+		flagSet.Int16VarP(p, name, short, *p, usage)
+	case *int32:
+		flagSet.Int32VarP(p, name, short, *p, usage)
+	case *int64:
+		flagSet.Int64VarP(p, name, short, *p, usage)
+	case *uint:
+		flagSet.UintVarP(p, name, short, *p, usage)
+	case *uint8:
+		flagSet.Uint8VarP(p, name, short, *p, usage)
+	case *uint16:
+		flagSet.Uint16VarP(p, name, short, *p, usage)
+	case *uint32:
+		flagSet.Uint32VarP(p, name, short, *p, usage)
+	case *uint64:
+		flagSet.Uint64VarP(p, name, short, *p, usage)
+	case *float32:
+		flagSet.Float32VarP(p, name, short, *p, usage)
+	case *float64:
+		flagSet.Float64VarP(p, name, short, *p, usage)
 	case *time.Duration:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.DurationVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.DurationVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle network-related flags
+		flagSet.DurationVarP(p, name, short, *p, usage)
 	case *net.IP:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IPVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IPVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+		flagSet.IPVarP(p, name, short, *p, usage)
 	case *net.IPNet:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IPNetVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IPNetVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+		flagSet.IPNetVarP(p, name, short, *p, usage)
 	case *net.IPMask:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IPMaskVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IPMaskVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle slice flags
-	case *[]int:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IntSliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IntSliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *[]int32:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Int32SliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Int32SliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *[]int64:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Int64SliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Int64SliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	// Handle float slices
-	case *[]float32:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Float32SliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Float32SliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *[]float64:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.Float64SliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.Float64SliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-
-	case *[]net.IP:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.IPSliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.IPSliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *[]time.Duration:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.DurationSliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.DurationSliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
-	case *[]byte:
-		switch info.FlagEncodeBase {
-		case FlagHEX:
-			if info.FlagShortName != "" && info.FlagShortName != "-" {
-				flagSet.BytesHexVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-			} else {
-				flagSet.BytesHexVar(val, info.FlagFullName, *val, info.FieldUsage)
-			}
-		case FlagB64:
-			if info.FlagShortName != "" && info.FlagShortName != "-" {
-				flagSet.BytesBase64VarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-			} else {
-				flagSet.BytesBase64Var(val, info.FlagFullName, *val, info.FieldUsage)
-			}
-		default:
-			return fmt.Errorf("unknown []byte decoding type: %v", info.FlagEncodeBase)
-		}
+		flagSet.IPMaskVarP(p, name, short, *p, usage)
 	case *[]bool:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.BoolSliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.BoolSliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+		flagSet.BoolSliceVarP(p, name, short, *p, usage)
 	case *[]string:
-		if info.FlagShortName != "" && info.FlagShortName != "-" {
-			flagSet.StringSliceVarP(val, info.FlagFullName, info.FlagShortName, *val, info.FieldUsage)
-		} else {
-			flagSet.StringSliceVar(val, info.FlagFullName, *val, info.FieldUsage)
-		}
+		flagSet.StringSliceVarP(p, name, short, *p, usage)
+	case *[]int:
+		flagSet.IntSliceVarP(p, name, short, *p, usage)
+	case *[]int32:
+		flagSet.Int32SliceVarP(p, name, short, *p, usage)
+	case *[]int64:
+		flagSet.Int64SliceVarP(p, name, short, *p, usage)
+	case *[]uint:
+		flagSet.UintSliceVarP(p, name, short, *p, usage)
+	case *[]float32:
+		flagSet.Float32SliceVarP(p, name, short, *p, usage)
+	case *[]float64:
+		flagSet.Float64SliceVarP(p, name, short, *p, usage)
+	case *[]net.IP:
+		flagSet.IPSliceVarP(p, name, short, *p, usage)
+	case *[]time.Duration:
+		flagSet.DurationSliceVarP(p, name, short, *p, usage)
+	case *map[string]string:
+		flagSet.StringToStringVarP(p, name, short, *p, usage)
+	case *map[string]int:
+		flagSet.StringToIntVarP(p, name, short, *p, usage)
+	case *map[string]int64:
+		flagSet.StringToInt64VarP(p, name, short, *p, usage)
+	case *[]byte:
+		return prepareBytesFlag(flagSet, p, name, short, usage, info.FlagEncodeBase)
 	default:
-		return fmt.Errorf("unknown type: %T", val)
+		if !parsable(field.Type()) {
+			return fmt.Errorf("unknown type: %T", p)
+		}
+
+		flagSet.VarP(fieldValue{field}, name, short, usage)
+
+		if field.Kind() == reflect.Bool { // like a bool flag: --enabled means true
+			flagSet.Lookup(name).NoOptDefVal = "true"
+		}
 	}
 
 	return nil
+}
+
+// prepareBytesFlag registers a []byte flag; its encoding is required: `flag:"key,base:hex"`.
+func prepareBytesFlag(flagSet *pflag.FlagSet, p *[]byte, name, short, usage, base string) error {
+	switch base {
+	case FlagHEX:
+		flagSet.BytesHexVarP(p, name, short, *p, usage)
+	case FlagB64:
+		flagSet.BytesBase64VarP(p, name, short, *p, usage)
+	default:
+		return fmt.Errorf("unknown []byte decoding type: %v", base)
+	}
+
+	return nil
+}
+
+// unmarshalType is encoding.TextUnmarshaler.
+var unmarshalType = reflect.TypeFor[encoding.TextUnmarshaler]()
+
+// parsable reports whether the `default` tag parser reads a value of t from a string.
+func parsable(t reflect.Type) bool {
+	if reflect.PointerTo(t).Implements(unmarshalType) {
+		return true
+	}
+
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Pointer:
+		return parsable(t.Elem())
+	case reflect.Map:
+		return parsable(t.Key()) && parsable(t.Elem())
+	case reflect.Struct, reflect.Interface, reflect.Func, reflect.Chan, reflect.UnsafePointer, reflect.Uintptr:
+		return false
+	default: // numbers, strings, booleans
+		return true
+	}
+}
+
+// fieldValue is the flag of a field whose type pflag has no flag for. It parses a value
+// like a `default` tag does: lists and maps are comma-separated, `k:v` for map entries.
+type fieldValue struct{ field reflect.Value }
+
+func (f fieldValue) Set(value string) error {
+	parsed := reflect.New(f.field.Type()).Elem()
+	if err := applyDefault(parsed, value); err != nil {
+		return err
+	}
+
+	f.field.Set(parsed)
+
+	return nil
+}
+
+// String is shown as the default in --help; pflag shows no default for "".
+func (f fieldValue) String() string {
+	value := f.field
+	for value.Kind() == reflect.Pointer && !value.IsNil() {
+		value = value.Elem()
+	}
+
+	switch {
+	case value.IsZero():
+		return ""
+	case isTextValue(value.Type()):
+		text, _ := textOf(value)
+
+		return text
+	default:
+		return fmt.Sprint(value.Interface())
+	}
+}
+
+// Type is the name of the value in --help: `--port Port`.
+func (f fieldValue) Type() string {
+	if name := f.field.Type().Name(); name != "" {
+		return name
+	}
+
+	return f.field.Type().String()
 }

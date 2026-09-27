@@ -155,10 +155,14 @@ gonfig: could not load: could not parse config.yaml: could not decode: 'main.Con
 
 ## Flags
 
-A field with a `flag` tag gets a flag. Supported types: `bool`, `string`, `int`, `int32`, `int64`, `uint`,
-`uint32`, `uint64`, `float32`, `float64`, `time.Duration`, `net.IP`, `net.IPNet`, `net.IPMask`, `[]byte`
-(with `base:hex` or `base:b64`) and slices of `bool`, `string`, `int`, `int32`, `int64`, `float32`,
-`float64`, `net.IP`, `time.Duration`. A flag of another type, or the same flag on two fields, is an error.
+A field with a `flag` tag gets a flag. pflag's own flags cover `bool`, `string`, every size of `int`,
+`uint` and `float`, `time.Duration`, `net.IP`, `net.IPNet`, `net.IPMask`, `[]byte` (with `base:hex` or
+`base:b64`), slices of `bool`, `string`, `int`, `int32`, `int64`, `uint`, `float32`, `float64`, `net.IP`,
+`time.Duration`, and `map[string]string`, `map[string]int`, `map[string]int64` (`--labels=team=core,tier=1`).
+Any other type the `default` tag parses gets a flag parsed the same way: named types (`type Port int`),
+`encoding.TextUnmarshaler` (`slog.Level`, `time.Time`), pointers, other lists and maps
+(`--weights=a:true,b:false`). A `func`, `chan` or interface field with a `flag` tag is an error, as is
+the same flag on two fields.
 
 `--help` prints every flag with the default from its `default` tag, never a value loaded from a file or
 the environment, then every environment variable, and exits with code 0. `WithCustomOutput` and
@@ -298,7 +302,6 @@ by `New` can be reused, also from several goroutines.
   `net.IPMask` is IPv4 only.
 - Pointers to structs are not walked: `default`, `required`, flags and `Validate()` inside them are
   ignored (environment variables and files do fill them).
-- Flags: no maps, `int8`, `int16`, `uint8`, `uint16` or named types such as `type Port int`.
 - Positional arguments are not available after loading.
 
 ## Upgrading to v0.7
