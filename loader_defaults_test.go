@@ -143,7 +143,7 @@ func TestSetDefaultValueErrors(t *testing.T) {
 			kind := reflect.StructOf([]reflect.StructField{{
 				Name: "SomeField",
 				Type: reflect.TypeOf(tt),
-				Tag:  `default:"1:1,2,str:invalid"`,
+				Tag:  `default:"1:1,str:invalid"`, // a map entry without ":" is an error of its own
 			}})
 
 			example := reflect.New(kind).Interface()
@@ -259,4 +259,54 @@ func TestSetDefaults_TextUnmarshalerZeroValue(t *testing.T) {
 	require.NoError(t, SetDefaults(&v))
 	require.Equal(t, slog.LevelInfo, v.Level)
 	require.True(t, v.Time.IsZero())
+}
+
+// M-12: limits of the `default` tag.
+func TestSetDefaults_Collections(t *testing.T) {
+	var v struct {
+		Waits  []time.Duration          `default:"1s,2m"`
+		Levels []slog.Level             `default:"info,warn"`
+		IPs    []net.IP                 `default:"10.0.0.1,::1"`
+		Array  [2]time.Duration         `default:"1s,2s"`
+		Times  map[string]time.Duration `default:"read:1s,write:2s"`
+		URLs   map[string]string        `default:"api:http://localhost:8080,web:https://example.org,"`
+		Mask4  net.IPMask               `default:"/24"`
+		Mask6  net.IPMask               `default:"64"`
+	}
+
+	require.NoError(t, SetDefaults(&v))
+	require.Equal(t, []time.Duration{time.Second, 2 * time.Minute}, v.Waits)
+	require.Equal(t, []slog.Level{slog.LevelInfo, slog.LevelWarn}, v.Levels)
+	require.Equal(t, []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("::1")}, v.IPs)
+	require.Equal(t, [2]time.Duration{time.Second, 2 * time.Second}, v.Array)
+	require.Equal(t, map[string]time.Duration{"read": time.Second, "write": 2 * time.Second}, v.Times)
+	require.Equal(t, map[string]string{"api": "http://localhost:8080", "web": "https://example.org"}, v.URLs)
+	require.Equal(t, net.CIDRMask(24, 32), v.Mask4)
+	require.Equal(t, net.CIDRMask(64, 128), v.Mask6)
+}
+
+func TestSetDefaults_CollectionErrors(t *testing.T) {
+	cases := map[string]any{
+		`"x"`: &struct {
+			V []time.Duration `default:"1s,x"`
+		}{},
+		`"no-colon"`: &struct {
+			V map[string]string `default:"a:1,no-colon"`
+		}{},
+		`"/129"`: &struct {
+			V net.IPMask `default:"/129"`
+		}{},
+		`"b"`: &struct {
+			V map[string]int `default:"a:1,b"`
+		}{},
+		`value of key "a"`: &struct {
+			V map[string]int `default:"a:x"`
+		}{},
+	}
+
+	for want, v := range cases {
+		err := SetDefaults(v)
+		require.Error(t, err, want)
+		require.Contains(t, err.Error(), want)
+	}
 }

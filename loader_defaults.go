@@ -50,6 +50,50 @@ func SetDefaults(dest any) error {
 	return nil
 }
 
+// setDefaultMap parses a map from key:value pairs separated by commas. The first ":"
+// splits a pair, so a value may contain it: api:http://host:8080.
+func setDefaultMap(field reflect.Value, value string) error {
+	result := reflect.MakeMap(field.Type())
+
+	for item := range strings.SplitSeq(value, ",") {
+		if item == "" {
+			continue
+		}
+
+		name, text, ok := strings.Cut(item, ":")
+		if !ok {
+			return fmt.Errorf("could not parse %q: a map entry is key:value", item)
+		}
+
+		key, err := parseDefault(field.Type().Key(), name)
+		if err != nil {
+			return err
+		}
+
+		val, err := parseDefault(field.Type().Elem(), text)
+		if err != nil {
+			return fmt.Errorf("value of key %q: %w", name, err)
+		}
+
+		result.SetMapIndex(key, val)
+	}
+
+	field.Set(result)
+
+	return nil
+}
+
+// parseDefault parses an item of a list or a map, of type t, with the rules of the
+// `default` tag: durations, IP types and encoding.TextUnmarshaler included.
+func parseDefault(t reflect.Type, item string) (reflect.Value, error) {
+	value := reflect.New(t).Elem()
+	if err := applyDefault(value, item); err != nil {
+		return value, fmt.Errorf("could not parse %q: %w", item, err)
+	}
+
+	return value, nil
+}
+
 // applyDefault sets the value of a `default` tag to an empty field.
 func applyDefault(field reflect.Value, value string) error {
 	if err := tryCustomTypes(field, value); errors.Is(err, ErrEnvSetterBreak) {
@@ -110,15 +154,23 @@ func tryCustomTypes(field reflect.Value, value any) error {
 		// Set the parsed duration to the field.
 		field.Set(reflect.ValueOf(val))
 	case net.IPMask:
-		// If the field is net.IPMask, trim the leading '/' from the CIDR mask string.
-		mask := strings.TrimPrefix(value.(string), "/")
-		// Convert the mask string to an integer (CIDR prefix length).
-		prefix, err := strconv.Atoi(mask)
+		// A prefix length, "/24" or "24": up to 32 an IPv4 mask, up to 128 an IPv6 one.
+		prefix, err := strconv.Atoi(strings.TrimPrefix(value.(string), "/"))
 		if err != nil {
-			return err // Return an error if conversion fails.
+			return err
 		}
-		// Set the corresponding IP mask using net.CIDRMask with a 32-bit IPv4 mask.
-		field.Set(reflect.ValueOf(net.CIDRMask(prefix, 32)))
+
+		bits := 8 * net.IPv4len
+		if prefix > bits {
+			bits = 8 * net.IPv6len
+		}
+
+		mask := net.CIDRMask(prefix, bits)
+		if mask == nil {
+			return fmt.Errorf("invalid mask %q: the prefix is 0 to 128", value)
+		}
+
+		field.Set(reflect.ValueOf(mask))
 	case net.IPNet:
 		// If the field is net.IPNet, parse the value as a CIDR notation string.
 		_, val, err := net.ParseCIDR(value.(string))
@@ -191,9 +243,9 @@ func setDefaultValue(field reflect.Value, value string) error {
 				continue
 			}
 
-			elem := reflect.New(field.Type().Elem()).Elem()
-			if err = setDefaultValue(elem, item); err != nil {
-				return fmt.Errorf("could not set default %q: %w", elem, err)
+			elem, errElem := parseDefault(field.Type().Elem(), item)
+			if errElem != nil {
+				return errElem
 			}
 
 			slice = reflect.Append(slice, elem)
@@ -212,9 +264,9 @@ func setDefaultValue(field reflect.Value, value string) error {
 				continue
 			}
 
-			elem := reflect.New(field.Type().Elem()).Elem()
-			if err = setDefaultValue(elem, item); err != nil {
-				return fmt.Errorf("could not set default %q: %w", elem, err)
+			elem, errElem := parseDefault(field.Type().Elem(), item)
+			if errElem != nil {
+				return errElem
 			}
 
 			array.Index(i).Set(elem)
@@ -222,28 +274,7 @@ func setDefaultValue(field reflect.Value, value string) error {
 
 		field.Set(array)
 	case reflect.Map:
-		items := strings.Split(value, ",")
-		maper := reflect.MakeMap(field.Type())
-		for _, item := range items {
-			pair := strings.Split(item, ":")
-			if len(pair) != 2 {
-				continue
-			}
-
-			key := reflect.New(field.Type().Key()).Elem()
-			if err = setDefaultValue(key, pair[0]); err != nil {
-				return fmt.Errorf("could not set default %q: %w", key, err)
-			}
-
-			val := reflect.New(field.Type().Elem()).Elem()
-			if err = setDefaultValue(val, pair[1]); err != nil {
-				return fmt.Errorf("could not set default %q: %w", val, err)
-			}
-
-			maper.SetMapIndex(key, val)
-		}
-
-		field.Set(maper)
+		return setDefaultMap(field, value)
 	case reflect.Pointer:
 		elem := reflect.New(field.Type().Elem())
 		if err = setDefaultValue(elem.Elem(), value); err != nil {

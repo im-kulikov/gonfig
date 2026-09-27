@@ -177,8 +177,10 @@ result does not depend on how the tests are run.
 ## Defaults
 
 The `default` tag fills a field that no source has set: numbers, strings, booleans, `time.Duration`,
-`net.IPNet` (`10.0.0.0/8`), `net.IPMask` (`/24`), any `encoding.TextUnmarshaler`, pointers to these,
-lists (`a,b`) and maps (`k:1,j:2`).
+`net.IPNet` (`10.0.0.0/8`), `net.IPMask` (a prefix, `/24`: IPv4 up to 32, IPv6 up to 128), any
+`encoding.TextUnmarshaler`, pointers to these, and lists (`1s,2m`) and maps (`read:1s,write:2s`) of them.
+The first `:` splits a map entry, so a value may contain it: `api:http://localhost:8080`. List items and
+map entries cannot contain `,`.
 
 `WithDefaults(tag, values)` sets defaults at run time from a map keyed by the given tag, with nested maps
 for nested structs. They win over `default` tags and lose to files, environment and flags:
@@ -301,8 +303,7 @@ by `New` can be reused, also from several goroutines.
 
 ## Limitations
 
-- `default` tags: no `[]time.Duration` or lists of `TextUnmarshaler` types; map values cannot contain `:`;
-  `net.IPMask` is IPv4 only.
+- `default` tags: list items and map entries cannot contain `,`, map keys cannot contain `:`.
 - Pointers to structs are not walked: `default`, `required`, flags and `Validate()` inside them are
   ignored (environment variables and files do fill them).
 - Positional arguments are not available after loading.
