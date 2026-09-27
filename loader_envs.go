@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -274,22 +275,117 @@ func PrepareEnvs(envs []string, prefix string) map[string]any {
 // insertIntoMap inserts the value into the map with the specified keys.
 // The keys define the nesting level of the map. If the keys are exhausted, the value is set.
 // This function creates nested maps as needed to match the structure defined by the keys.
+//
+// A name can be a value and the start of other names at once (DB and DB_HOST):
+// then it holds the nested map and keeps its own value under the "" key, whatever
+// the order of the variables. envClashHook picks what the field needs.
 func insertIntoMap(m map[string]any, keys []string, value any) {
+	setLeaf(m, strings.Join(keys, envDelimiter), value)
+
 	if len(keys) == 1 {
-		m[keys[0]] = value
 		return
 	}
 
-	m[strings.Join(keys, envDelimiter)] = value
+	nested, ok := m[keys[0]].(map[string]any)
+	if !ok {
+		nested = make(map[string]any)
+		if own, exists := m[keys[0]]; exists {
+			nested[""] = own
+		}
 
-	// Create a nested map if it does not exist
-	if _, ok := m[keys[0]]; !ok {
-		m[keys[0]] = make(map[string]any)
+		m[keys[0]] = nested
 	}
 
-	if nestedMap, ok := m[keys[0]].(map[string]any); ok {
-		insertIntoMap(nestedMap, keys[1:], value)
+	insertIntoMap(nested, keys[1:], value)
+}
+
+// setLeaf sets the value of a name, next to the nested names under it, if any.
+func setLeaf(m map[string]any, key string, value any) {
+	if nested, ok := m[key].(map[string]any); ok {
+		nested[""] = value
+
+		return
 	}
+
+	m[key] = value
+}
+
+// envClashHook resolves a name that is both a variable and the start of other ones
+// (see insertIntoMap) before a struct or a map is decoded: a field of a struct or
+// map type takes the nested names and ignores the variable (DB and DB_HOST), any
+// other field takes the variable and ignores the nested names, which belong to
+// something else (NAME and NAME_SUFFIX). Without it the whole loading failed.
+func envClashHook(_, target reflect.Type, data any) (any, error) {
+	tree, ok := data.(map[string]any)
+	if !ok {
+		return data, nil
+	}
+
+	switch target.Kind() {
+	case reflect.Struct:
+		return resolveClashes(maps.Clone(tree), target), nil
+	case reflect.Map:
+		if _, own := tree[""]; own {
+			tree = maps.Clone(tree)
+			delete(tree, "")
+		}
+	}
+
+	return tree, nil
+}
+
+// resolveClashes fixes the values of the fields of t in tree, see envClashHook.
+func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
+	for field := range t.Fields() {
+		parts := strings.Split(field.Tag.Get(envTag), ",")
+
+		kind := field.Type
+		for kind.Kind() == reflect.Pointer {
+			kind = kind.Elem()
+		}
+
+		container := kind.Kind() == reflect.Map || kind.Kind() == reflect.Struct && !textStruct(kind)
+
+		switch key, found := lookupKey(tree, parts[0]); {
+		case parts[0] == "" && container && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
+			resolveClashes(tree, kind) // inlined: its fields read from this level
+		case !found:
+		case container:
+			if _, isTree := tree[key].(map[string]any); !isTree {
+				delete(tree, key) // DB=x next to the struct DB
+			}
+		default:
+			if nested, isTree := tree[key].(map[string]any); isTree {
+				tree[key] = nested[""] // NAME next to NAME_SUFFIX
+				if tree[key] == nil {
+					delete(tree, key) // NAME_SUFFIX alone
+				}
+			}
+		}
+	}
+
+	return tree
+}
+
+// lookupKey finds the key of a field as mapstructure does: exact, else case-insensitive.
+func lookupKey(tree map[string]any, name string) (string, bool) {
+	if _, ok := tree[name]; ok || name == "" {
+		return name, ok
+	}
+
+	for key := range tree {
+		if strings.EqualFold(key, name) {
+			return key, true
+		}
+	}
+
+	return "", false
+}
+
+// textStruct reports whether a struct is read from a string: net.IPNet, time.Time
+// or any other encoding.TextUnmarshaler.
+func textStruct(t reflect.Type) bool {
+	return t == ipNetType || reflect.PointerTo(t).Implements(unmarshalType)
 }
 
 // decodeHooks converts the provided data into the target type using type-specific parsing.
@@ -370,6 +466,7 @@ type decodeOptions struct {
 	inline   string // tag option that inlines a named struct field
 	untagged bool   // match fields without the tag by their name (files); env skips them
 	strict   bool   // keys that match no field are an error (files only: env holds every variable)
+	env      bool   // resolve a name that is both a variable and the start of others (envClashHook)
 }
 
 func decodeMapToStruct(dest any, from map[string]any, tag string) error {
@@ -387,6 +484,10 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 		IgnoreUntaggedFields: !options.untagged,
 		ErrorUnused:          options.strict,
 		DecodeHook:           decodeHooks(),
+	}
+
+	if options.env {
+		conf.DecodeHook = mapstructure.ComposeDecodeHookFunc(envClashHook, conf.DecodeHook)
 	}
 
 	dec, err := mapstructure.NewDecoder(conf)
@@ -410,7 +511,7 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 // It uses mapstructure to map the environment variables to the fields of the destination
 // object based on the "env" tag. It returns an error if decoding fails.
 func LoadEnvs(envs map[string]any, dest any) error {
-	return decodeMapToStruct(dest, envs, envTag)
+	return decodeMap(dest, envs, decodeOptions{tag: envTag, inline: envInlineOption, env: true})
 }
 
 // jsonNumberHook turns json.Number from JSON files into a Go number before the

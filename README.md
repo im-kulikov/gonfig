@@ -116,6 +116,8 @@ type Config struct {
   `LABELS_team=core` for `Labels map[string]string` tagged `env:"LABELS"`.
 - Durations (`5s`), IPs, CIDR networks and every `encoding.TextUnmarshaler` (`slog.Level`, `time.Time`)
   are parsed from text.
+- Names that belong to something else are ignored: `DB=...` next to the struct `DB` (`DB_HOST`), or
+  `NAME_SUFFIX` next to the field `NAME`.
 
 ## Config files
 
