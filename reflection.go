@@ -47,6 +47,7 @@ type TagOptions struct {
 	FlagShortName  string
 	FlagConfig     bool
 	FieldRequired  bool
+	FieldSecret    bool
 	FieldIgnored   bool
 	FieldUsage     string
 
@@ -61,6 +62,25 @@ const (
 	// ErrExpectPointer is returned when a pointer is expected, but the provided value is not a pointer.
 	ErrExpectPointer = Error("expect pointer")
 )
+
+// SecretTag marks a field whose value must not be shown: `secret:"true"`.
+// On a struct field it covers every nested field. A secret is hidden in --help
+// (flag defaults, environment variables) and in exported configs.
+const SecretTag = "secret"
+
+// isTrue reports whether a boolean tag such as `required:"true"` is set.
+func isTrue(tag reflect.StructTag, key string) bool { return tag.Get(key) == "true" }
+
+// isSecret reports whether the field or any struct it belongs to is marked secret.
+func isSecret(elem *ReflectValue) bool {
+	for ; elem != nil; elem = elem.Owner {
+		if isTrue(elem.Field.Tag, SecretTag) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // ParseTagOptions parses a `reflect.StructTag` and extracts relevant options into a TagOptions struct.
 // It processes the tag string to identify various flag configurations such as the full name, short name,
@@ -79,7 +99,7 @@ const (
 // Returns:
 // - A TagOptions struct populated with the parsed information.
 //
-// Example tag format: `flag:"flagName,base:base64,short:f,config:true" usage:"field usage" required:"true"`
+// Example tag format: `flag:"flagName,base:hex,short:f,config:true" usage:"field usage" required:"true" secret:"true"`
 func ParseTagOptions(tag reflect.StructTag) TagOptions {
 	flag := tag.Get(FlagTag)
 
@@ -89,7 +109,8 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 		FlagFullName:  tmp[0],
 		FieldIgnored:  tmp[0] == "-",
 		FieldUsage:    tag.Get(FlagTagUsage),
-		FieldRequired: tag.Get(RequiredTag) == "true",
+		FieldRequired: isTrue(tag, RequiredTag),
+		FieldSecret:   isTrue(tag, SecretTag),
 		tag:           tag,
 	}
 

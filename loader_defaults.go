@@ -42,19 +42,23 @@ func SetDefaults(dest any) error {
 			return fmt.Errorf("(defaults) %w", err)
 		}
 
-		value := elem.Field.Tag.Get(defaultTagName)
-		if err = tryCustomTypes(elem.Value, value); errors.Is(err, ErrEnvSetterBreak) {
-			continue
-		} else if err != nil {
-			return fmt.Errorf("(defaults) failed to set field %q: %w", elem.Field.Name, err)
-		}
-
-		if err = setDefaultValue(elem.Value, value); err != nil {
+		if err = applyDefault(elem.Value, elem.Field.Tag.Get(defaultTagName)); err != nil {
 			return fmt.Errorf("(defaults) failed to set field %q: %w", elem.Field.Name, err)
 		}
 	}
 
 	return nil
+}
+
+// applyDefault sets the value of a `default` tag to an empty field.
+func applyDefault(field reflect.Value, value string) error {
+	if err := tryCustomTypes(field, value); errors.Is(err, ErrEnvSetterBreak) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	return setDefaultValue(field, value)
 }
 
 // getTextUnmarshaler checks if the field can be converted to encoding.TextUnmarshaler.
