@@ -31,7 +31,7 @@ type ReflectOptions struct {
 // It is used to define metadata for struct fields, including encoding details, flag names, and validation rules.
 //
 // Fields:
-// - FlagEncodeBase: Defines the base encoding format for the field (e.g., base64, base32).
+// - FlagEncodeBase: The encoding of a []byte flag: hex or b64 (`flag:"name,base:hex"`).
 // - FlagFullName: Specifies the full name of the flag associated with the field.
 // - FlagShortName: Specifies the short or abbreviated name of the flag.
 // - FlagConfig: Indicates whether the field should be loaded from a configuration file or environment variable.
@@ -88,7 +88,7 @@ func isSecret(elem *ReflectValue) bool {
 //
 // The function expects certain tag formats, such as:
 // - Full flag name as the first element in the tag, separated by a comma.
-// - Optional "base:" prefix to define the encoding format (e.g., base64, base32).
+// - Optional "base:" prefix to define the encoding of a []byte flag: hex or b64.
 // - Optional "short:" prefix to define a short flag name.
 // - "config:true" to indicate that the flag can be loaded from a configuration file.
 // - Required status is determined by the "RequiredTag" with the value "true".
@@ -261,12 +261,13 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 				}
 
 				if !options.IsField(fv) {
-					// Recursively handle nested structs. If yielding returns false, stop iteration.
+					// A nested struct: its fields are visited after the ones of this level.
 					structs = append(structs, &ReflectValue{Value: fv, Field: elem.Value.Type().Field(i), Owner: elem})
 
 					continue
 				}
 
+				// Stop when the consumer breaks out of the loop.
 				if !yield(&ReflectValue{Value: fv, Owner: elem, Field: elem.Value.Type().Field(i)}, nil) {
 					break loop
 				}

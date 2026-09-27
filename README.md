@@ -24,7 +24,7 @@ This library simplifies configuration management, making it easy to define, over
 
 ### General Priority Hierarchy:
 
-The priority described below is considered the default priority and can be modified through configuration settings.
+Every source overrides the previous ones. The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off.
 
 1. **Defaults** — Basic configuration values embedded in the application's code via `default` tags.
 2. **Config File** — Values loaded from a configuration file (JSON, YAML, TOML). The path is determined by a flag pre-scan.

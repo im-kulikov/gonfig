@@ -79,7 +79,7 @@ func getTextUnmarshaler(field reflect.Value) (encoding.TextUnmarshaler, bool) {
 }
 
 // tryCustomTypes attempts to set the value of a `reflect.Value` field based on its type.
-// It handles specific types like time.Duration, net.IP, net.IPMask, and net.IPNet.
+// It handles encoding.TextUnmarshaler (net.IP, slog.Level, ...), time.Duration, net.IPMask and net.IPNet.
 // If the value is not empty and the field is not yet set (IsZero), it processes the value.
 func tryCustomTypes(field reflect.Value, value any) error {
 	// If the value is empty or the field already has a value, return early with no error.
@@ -138,7 +138,7 @@ func tryCustomTypes(field reflect.Value, value any) error {
 // slices, arrays, maps, and pointers. For complex types, the value is split by commas
 // and for maps, by colons. Returns an error if parsing or setting the value fails.
 //
-// nolint:gocognit,funlen
+//nolint:gocognit,funlen
 func setDefaultValue(field reflect.Value, value string) error {
 	var err error
 	if value == "" || !field.IsZero() {

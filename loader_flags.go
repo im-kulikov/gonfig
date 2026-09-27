@@ -152,32 +152,10 @@ func flagDefault(elem *ReflectValue, options TagOptions) string {
 	return scratch.Lookup(options.FlagFullName).DefValue
 }
 
-// parseConfigPath creates a Parser responsible for handling the "config-path" functionality.
-// This parser reflects over the fields of the provided struct and parses flags related to the configuration path.
-// It uses the pflag library to handle command-line flags and extracts flag metadata from struct tags.
-//
-// Parameters:
-//   - svc: A pointer to a loader struct that contains the arguments (`svc.Args`)
-//     and the config field (`svc.config`) to be populated.
-//
-// The function performs the following operations:
-// 1. Reflects over the fields of the `val` argument using ReflectFieldsOf, filtering based on `ReflectOptions`
-// (only settable fields are considered).
-// 2. For each field, it checks if the field is tagged with `FlagConfig`, indicating it should be configured
-// from the command line.
-// 3. Ensures that only string fields are used for the configuration path, otherwise an error is returned.
-// 4. Uses pflag to define and parse the configuration flag based on the full name and short name from the `TagOptions`.
-// 5. Parses the command-line arguments (`svc.Args`) to populate the `svc.config` field.
-//
-// If an error occurs during reflection or flag parsing, it returns a formatted error.
-//
-// Returns:
-// - A Parser that is responsible for extracting and validating the "config-path" flag.
-//
-// Example usage:
-//
-//	parser := parseConfigPath(loaderInstance)
-//	err := parser.Parse(configStruct)  // Parses the config path from the struct tags and command-line arguments.
+// parseConfigPath returns the parser of the ParserConfigSet step: it pre-scans the
+// arguments for the config path, from --config/-c with DefaultConfigFlag or from the
+// string field tagged `flag:"...,config:true"`, and stores it in l.config for the
+// parsers that implement ParserConfigSetter. Unknown flags are left to the flags step.
 func parseConfigPath(l *loader) *parserFunc {
 	return &parserFunc{name: ParserConfigSet, call: parseDefaultConfigPath(l, func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
@@ -284,7 +262,7 @@ func containsMarker(val any, marker reflect.Type) bool {
 // It configures the flag with its name, short name, and usage description and binds it to the field's value.
 // Returns an error if the flag setup fails.
 //
-// nolint:gocognit,gocyclo,funlen
+//nolint:gocognit,gocyclo,funlen
 func prepareFlag(flagSet *pflag.FlagSet, field reflect.Value, info TagOptions) error {
 	switch val := field.Addr().Interface().(type) {
 	case *bool: // Handle boolean flags
