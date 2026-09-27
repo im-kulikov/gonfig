@@ -96,9 +96,11 @@ type loader struct {
 
 	output any
 	config string
-	buffer io.Writer
-	orders []ParserType
-	groups map[ParserType]Parser
+
+	printConfig string // the value of --print-config, see PrintConfigFlag
+	buffer      io.Writer
+	orders      []ParserType
+	groups      map[ParserType]Parser
 
 	exit func(int) // used for tests, to ignore os.Exit
 }
@@ -510,6 +512,10 @@ func New(config Config, options ...LoaderOption) Parser {
 			}
 		}
 
+		if l.printConfig != "" {
+			return l.print(v)
+		}
+
 		if err := ValidateRequiredFields(v); err != nil {
 			return err
 		}
@@ -520,6 +526,28 @@ func New(config Config, options ...LoaderOption) Parser {
 
 		return nil
 	})}
+}
+
+// print writes the loaded config for --print-config and exits, like --help does.
+func (l *loader) print(v any) error {
+	if err := Write(l.buffer, v, Format(l.printConfig), WithEnvPrefix(l.EnvPrefix)); err != nil {
+		return fmt.Errorf("gonfig: could not print config: %w", err)
+	}
+
+	l.exit(0)
+
+	return ErrTestExit
+}
+
+// fileFormat is the format of the first file loader, or YAML without one.
+func (l *loader) fileFormat() Format {
+	for _, typ := range l.orders {
+		if format, ok := fileFormats[typ]; ok {
+			return Format(format.tag)
+		}
+	}
+
+	return FormatYAML
 }
 
 // Load initializes a new Parser with default settings and applies optional LoaderOptions.
