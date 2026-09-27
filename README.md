@@ -353,6 +353,7 @@ by `New` can be reused, also from several goroutines.
 ## Upgrading to v0.7
 
 - Go 1.26 or newer is required; the two latest Go releases are supported.
+- `Ptr`, `True` and `False` are removed: use `new(v)`, for example `new(true)`.
 - Config files are decoded by the same rules as environment variables. An embedded struct no longer
   needs `yaml:",inline"`; JSON and TOML accept `"3s"` for `time.Duration` and `"10.0.0.0/8"` for
   `net.IPNet`; `encoding.TextUnmarshaler` types (`slog.Level`, `time.Time`) work in every source;

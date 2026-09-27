@@ -151,36 +151,6 @@ func ParseTagOptions(tag reflect.StructTag) TagOptions {
 	return opt
 }
 
-// Ptr takes a value of any comparable type and returns a pointer to that value.
-// This function is useful for quickly getting a pointer to a literal or value,
-// especially in situations where you need a pointer for use in data structures or APIs.
-//
-// Example usage:
-//
-//	i := Ptr(42)       // Returns a pointer to an integer 42
-//	s := Ptr("hello")  // Returns a pointer to the string "hello"
-//
-// E must be a type that supports the comparable constraint.
-//
-//go:fix inline
-func Ptr[E comparable](v E) *E { return new(v) }
-
-// True returns a pointer to a boolean value set to true.
-// It uses the Ptr function to quickly generate a pointer for the boolean literal true.
-//
-// Example usage:
-//
-//	b := True()  // Returns *bool pointing to true
-func True() *bool { return new(true) }
-
-// False returns a pointer to a boolean value set to false.
-// Like True, it uses the Ptr function to generate a pointer to the boolean literal false.
-//
-// Example usage:
-//
-//	b := False()  // Returns *bool pointing to false
-func False() *bool { return new(false) }
-
 // IsValid checks whether a `reflect.Value` satisfies the conditions specified in the ReflectOptions.
 // It validates whether the value's CanSet, CanAddr, and CanInterface properties match the corresponding
 // constraints set in the ReflectOptions. If any constraint is not met, the method returns false.
@@ -194,7 +164,7 @@ func False() *bool { return new(false) }
 //
 // Example usage:
 //
-//	options := ReflectOptions{CanSet: Ptr(true)}
+//	options := ReflectOptions{CanSet: new(true)}
 //	valid := options.IsValid(reflect.ValueOf(someField))  // returns true/false based on validation.
 func (o *ReflectOptions) IsValid(v reflect.Value) bool {
 	if o.CanSet != nil && v.CanSet() != *o.CanSet {

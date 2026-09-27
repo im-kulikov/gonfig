@@ -106,7 +106,7 @@ func newFlagsLoader(l *loader) *parserFunc {
 // the []string fields tagged `flag:",args"`. Without arguments the field keeps the
 // value of the other sources, a `default` tag for example.
 func setPositionalArgs(dest any, args []string) error {
-	for elem := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True()}) { // PrepareFlags has checked dest
+	for elem := range ReflectFieldsOf(dest, ReflectOptions{CanSet: new(true)}) { // PrepareFlags has checked dest
 		switch {
 		case !ParseTagOptions(elem.Field.Tag).FlagArgs:
 		case elem.Value.Type() != reflect.TypeFor[[]string]():
@@ -125,7 +125,7 @@ func setPositionalArgs(dest any, args []string) error {
 func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 	types := []reflect.Type{reflect.TypeFor[net.IPNet]()}
 
-	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanSet: True(), AsField: types}) {
+	for elem, err := range ReflectFieldsOf(dest, ReflectOptions{CanSet: new(true), AsField: types}) {
 		if err != nil {
 			return fmt.Errorf("(flags) %w", err)
 		}
@@ -197,7 +197,7 @@ func parseConfigPath(l *loader) *parserFunc {
 		flags.SetOutput(io.Discard)
 		flags.ParseErrorsAllowlist.UnknownFlags = true
 
-		for elem, err := range ReflectFieldsOf(val, ReflectOptions{CanSet: True()}) {
+		for elem, err := range ReflectFieldsOf(val, ReflectOptions{CanSet: new(true)}) {
 			if err != nil {
 				return fmt.Errorf("(config-path) could not fetch config flag: %w", err)
 			}

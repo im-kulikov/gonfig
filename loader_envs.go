@@ -109,7 +109,7 @@ func EnvUsageWithPrefix(prefix string) EnvUsageOption {
 func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	output := make([]envUsage, 0)
 	exists := make(map[string]struct{})
-	for field, err := range ReflectFieldsOf(withSections(dest), ReflectOptions{CanSet: True(), Pointers: true}) {
+	for field, err := range ReflectFieldsOf(withSections(dest), ReflectOptions{CanSet: new(true), Pointers: true}) {
 		if err != nil {
 			return ""
 		}
