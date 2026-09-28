@@ -220,7 +220,7 @@ const ErrEnvValue Error = "cannot be written as an environment variable"
 // printEnv writes NAME=value for every value env can set, sections flattened.
 func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) error {
 	for _, n := range nodes {
-		if n.section && n.entry && (n.key == "" || strings.Contains(n.key, envDelimiter)) {
+		if n.section && n.entry && len(n.children) > 0 && (n.key == "" || strings.Contains(n.key, envDelimiter)) {
 			return fmt.Errorf("map key %q %w: in a map of structs or maps a key is one segment of a name, "+
 				"not empty and without %q", n.key, ErrEnvValue, envDelimiter)
 		}

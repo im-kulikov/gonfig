@@ -319,11 +319,12 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 
 		inner, ok := w.into(v)
 
-		return ok && inner.fill(n, v.Elem(), env)
+		// a section set to an empty struct is written, as {}: it reads back set, not nil
+		return ok && (inner.fill(n, v.Elem(), env) || n.section)
 	case v.Kind() == reflect.Struct:
 		n.section, n.children = true, w.fields(v, env, n.secret)
 
-		return len(n.children) > 0
+		return len(n.children) > 0 || n.entry // a map entry is written even empty: its key is the value
 	case v.Kind() == reflect.Map:
 		if n.secret { // even the keys of a secret map may tell too much
 			return false

@@ -323,6 +323,29 @@ type shadowBase struct {
 	Port int    `yaml:"port" json:"port" toml:"port"`
 }
 
+func TestWrite_EmptySections(t *testing.T) {
+	type config struct {
+		Feature *struct{}           `yaml:"feature" json:"feature" toml:"feature"`
+		Off     *struct{}           `yaml:"off"     json:"off"     toml:"off"`
+		Set     map[string]struct{} `yaml:"set"     json:"set"     toml:"set"     env:"SET"`
+	}
+
+	env := write(t, &config{Set: map[string]struct{}{"a_b": {}}}, FormatEnv)
+	assert.Empty(t, env, "env cannot hold an empty entry, whatever its key")
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &config{Feature: &struct{}{}, Set: map[string]struct{}{"a": {}}}, format)
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.NotNil(t, got.Feature, "a section set to an empty struct stays set:\n%s", output)
+			assert.Nil(t, got.Off, output)
+			assert.Equal(t, map[string]struct{}{"a": {}}, got.Set, output)
+		})
+	}
+}
+
 func TestWrite_Shadowed(t *testing.T) {
 	type config struct {
 		shadowBase
