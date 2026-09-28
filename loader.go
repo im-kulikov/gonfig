@@ -1,12 +1,15 @@
 package gonfig
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/spf13/pflag"
 )
 
 // Error is a custom error type based on a string.
@@ -405,6 +408,10 @@ func (l *loader) load(v any) error {
 		}
 
 		if err := parser.Load(v); err != nil {
+			if typ != ParserFlags && helpAsked(l.Args) && l.help(v) {
+				return pflag.ErrHelp // --help, even when a source before the flags is wrong
+			}
+
 			return fmt.Errorf("gonfig: could not load: %w", err)
 		}
 	}
@@ -418,6 +425,27 @@ func (l *loader) load(v any) error {
 	}
 
 	return validate(v)
+}
+
+// help runs the flags parser, which prints the usage for --help, and reports whether it did.
+func (l *loader) help(v any) bool {
+	flags, ok := l.groups[ParserFlags]
+
+	return ok && errors.Is(flags.Load(v), pflag.ErrHelp)
+}
+
+// helpAsked reports whether the arguments hold -h or --help before "--".
+func helpAsked(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--":
+			return false
+		case "-h", "--help":
+			return true
+		}
+	}
+
+	return false
 }
 
 // print writes the loaded config for --print-config and exits, like --help does.
