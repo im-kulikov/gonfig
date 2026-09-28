@@ -310,3 +310,23 @@ func TestSetDefaults_CollectionErrors(t *testing.T) {
 		require.Contains(t, err.Error(), want)
 	}
 }
+
+type defaultsPromoted struct {
+	Port int `default:"80"`
+}
+
+func TestSetDefaults_Unexported(t *testing.T) {
+	var config struct {
+		defaultsPromoted // unexported, its exported fields are promoted
+
+		host   string `default:"localhost"`
+		nested struct {
+			Name string `default:"x"`
+		}
+	}
+
+	require.NoError(t, SetDefaults(&config))
+	require.Equal(t, 80, config.Port)
+	require.Empty(t, config.host, "no source sets an unexported field")
+	require.Empty(t, config.nested.Name)
+}
