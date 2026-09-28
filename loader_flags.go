@@ -242,13 +242,17 @@ func parseConfigPath(l *loader) *parserFunc {
 				return fmt.Errorf("(config-path) expect string, got %q", elem.Value.Kind())
 			}
 
-			if err = checkFlag(flags, elem.Field.Name, opts); err != nil {
-				return fmt.Errorf("(config-path) %w", err)
-			}
-
 			l.config = elem.Value.String()
 			if name, ok := envNameOf(elem); ok && !l.SkipEnv {
 				l.config = lookupEnv(l.Envs, envPrefix(l.EnvPrefix)+name, l.config)
+			}
+
+			if opts.FlagFullName == "" || opts.FieldIgnored {
+				continue // no flag, as PrepareFlags adds none: the path of the variable or the value
+			}
+
+			if err = checkFlag(flags, elem.Field.Name, opts); err != nil {
+				return fmt.Errorf("(config-path) %w", err)
 			}
 
 			flags.StringVarP(&l.config, opts.FlagFullName, opts.shorthand(), l.config, opts.FieldUsage)

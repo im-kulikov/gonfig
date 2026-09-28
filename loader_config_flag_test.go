@@ -126,6 +126,27 @@ func TestConfigField_InvalidFlag(t *testing.T) {
 	require.ErrorIs(t, load(&twice), ErrFlagRedefined)
 }
 
+func TestConfigField_WithoutFlag(t *testing.T) {
+	path := writeTempFile(t, "config.yaml", "name: file")
+
+	var v struct {
+		Path string `flag:",config:true" env:"CONFIG"`
+		Name string `yaml:"name"`
+	}
+	require.NoError(t, Load(&v, WithYAMLLoader(), WithConfig(func(c *Config) {
+		c.Args, c.Envs = []string{}, []string{"CONFIG=" + path}
+	})))
+	assert.Equal(t, "file", v.Name, "the path of the variable, with no flag")
+
+	var none struct {
+		Path  string `flag:",config:true"`
+		Other string `flag:",config:true"` // not a flag "" defined twice
+		Short string `flag:"-,short:c,config:true"`
+	}
+	err := Load(&none, WithConfig(func(c *Config) { c.Args, c.Envs = []string{"-c", "x.yaml"}, []string{} }))
+	require.ErrorContains(t, err, "unknown shorthand flag: 'c'", "no -c for the path, as no -c in --help")
+}
+
 func TestConfigField_PathSources(t *testing.T) {
 	type config struct {
 		Path string `flag:"config,config:true" env:"CONFIG" default:"default.yaml"`
