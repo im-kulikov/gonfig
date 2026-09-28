@@ -42,6 +42,10 @@ func SetDefaults(dest any) error {
 			return fmt.Errorf("(defaults) %w", err)
 		}
 
+		if !elem.Value.CanSet() { // an unexported field: no source sets it
+			continue
+		}
+
 		if err = applyDefault(elem.Value, elem.Field.Tag.Get(defaultTagName)); err != nil {
 			return fmt.Errorf("(defaults) failed to set field %q: %w", elem.Field.Name, err)
 		}
