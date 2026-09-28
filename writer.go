@@ -330,9 +330,10 @@ var (
 )
 
 // isTextValue reports whether values of t are written as text: the loader reads
-// them from a string with the shared hooks.
+// them from a string with the shared hooks. A pointer is not: it is dereferenced.
 func isTextValue(t reflect.Type) bool {
-	return t == durationType || t == ipNetType || t.Implements(marshalType) || reflect.PointerTo(t).Implements(marshalType)
+	return t.Kind() != reflect.Pointer &&
+		(t == durationType || t == ipNetType || t.Implements(marshalType) || reflect.PointerTo(t).Implements(marshalType))
 }
 
 // textOf returns the text of a value; an empty IP network is left out, as the

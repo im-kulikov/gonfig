@@ -57,6 +57,11 @@ type roundTrip struct {
 	Pointer  *rtInner          `yaml:"pointer"  json:"pointer"  toml:"pointer"  env:"POINTER"`
 	Items    []rtItem          `yaml:"items"    json:"items"    toml:"items"    env:"-"` // env cannot hold structs
 	Password string            `yaml:"password" json:"password" toml:"password" env:"PASSWORD" secret:"true"`
+	Since    *time.Time        `yaml:"since"    json:"since"    toml:"since"    env:"SINCE"`
+	Never    *time.Time        `yaml:"never"    json:"never"    toml:"never"    env:"NEVER"`
+	IPs      []net.IP          `yaml:"ips"      json:"ips"      toml:"ips"      env:"IPS"`
+	Levels   []slog.Level      `yaml:"levels"   json:"levels"   toml:"levels"   env:"LEVELS"`
+	Pair     [2]int            `yaml:"pair"     json:"pair"     toml:"pair"     env:"PAIR"`
 }
 
 func newRoundTrip(t *testing.T) roundTrip {
@@ -87,6 +92,10 @@ func newRoundTrip(t *testing.T) roundTrip {
 		Pointer:    &rtInner{Name: "pointer", Wait: time.Millisecond},
 		Items:      []rtItem{{Host: "a", Port: 1, Inner: rtInner{Name: "i"}}, {Host: "b", Port: 2}},
 		Password:   "hunter2",
+		Since:      new(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)),
+		IPs:        []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("::1")},
+		Levels:     []slog.Level{slog.LevelDebug, slog.LevelError},
+		Pair:       [2]int{3, 4},
 	}
 }
 
