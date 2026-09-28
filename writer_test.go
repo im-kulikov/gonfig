@@ -387,3 +387,25 @@ func TestWrite_Interfaces(t *testing.T) {
 		"an interface is written as the value it holds")
 	assert.Equal(t, "{}\n", write(t, &config{}, FormatYAML), "a nil interface is left out")
 }
+
+func TestWrite_MapAndListCycles(t *testing.T) {
+	m := map[string]any{"a": 1}
+	m["self"] = m
+
+	l := []any{1, nil}
+	l[1] = l
+
+	n := map[string]any{} // a map in a list in the map
+	n["list"] = []any{n}
+
+	type config struct {
+		Map    map[string]any `yaml:"map"`
+		List   []any          `yaml:"list"`
+		Nested map[string]any `yaml:"nested"`
+		Inline map[string]any `yaml:",inline"`
+	}
+
+	assert.Equal(t, "map:\n  a: 1\nlist:\n  - 1\nnested:\n  list: []\na: 1\n",
+		write(t, &config{Map: m, List: l, Nested: n, Inline: m}, FormatYAML),
+		"a map or a list inside itself is left out, not written forever")
+}

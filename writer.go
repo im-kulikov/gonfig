@@ -187,18 +187,25 @@ type walker struct {
 	way    []visit // the structs being written, from the root: a pointer back to one is left out
 }
 
-// into returns the walker for the value v points to; false for a pointer back to a
-// struct being written, a cycle.
+// into returns the walker for what v points to or holds, a pointer, a map or a list;
+// false for one of them already on the way, a cycle: m["self"] = m.
 func (w walker) into(v reflect.Value) (walker, bool) {
-	if v.Kind() != reflect.Pointer {
+	var at visit
+
+	switch {
+	case v.Kind() == reflect.Pointer:
+		at = visitOf(v)
+	case (v.Kind() == reflect.Map || v.Kind() == reflect.Slice) && !v.IsNil():
+		at = visit{v.Pointer(), v.Type()}
+	default:
 		return w, true
 	}
 
-	if slices.Contains(w.way, visitOf(v)) {
+	if slices.Contains(w.way, at) {
 		return w, false
 	}
 
-	w.way = append(slices.Clip(w.way), visitOf(v))
+	w.way = append(slices.Clip(w.way), at)
 
 	return w, true
 }
@@ -262,7 +269,9 @@ func unshadowed(nodes []*node, own map[*node]bool, keys map[string]bool) []*node
 func (w walker) inlined(v reflect.Value, env envName, secret bool) []*node {
 	switch {
 	case v.Kind() == reflect.Map && !secret: // even the keys of a secret map may tell too much
-		return w.entries(v, env, false)
+		if inner, ok := w.into(v); ok {
+			return inner.entries(v, env, false)
+		}
 	case v.Kind() == reflect.Struct:
 		return w.fields(v, env, secret)
 	case v.Kind() == reflect.Pointer && !v.IsNil():
@@ -320,7 +329,12 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 			return false
 		}
 
-		n.section, n.children = true, w.entries(v, env, false)
+		inner, ok := w.into(v)
+		if !ok {
+			return false
+		}
+
+		n.section, n.children = true, inner.entries(v, env, false)
 
 		return len(n.children) > 0 || !v.IsNil() // an empty map is written, as {}: it reads back empty, not nil
 	}
@@ -375,7 +389,12 @@ func (w walker) value(v reflect.Value) (any, bool) {
 	case reflect.Float32, reflect.Float64:
 		return v.Float(), true
 	case reflect.Slice, reflect.Array:
-		return w.list(v), true
+		inner, ok := w.into(v)
+		if !ok {
+			return nil, false
+		}
+
+		return inner.list(v), true
 	case reflect.Pointer, reflect.Interface:
 		inner, ok := w.into(v)
 		if v.IsNil() || !ok {
@@ -388,7 +407,12 @@ func (w walker) value(v reflect.Value) (any, bool) {
 	case reflect.Struct:
 		return w.fields(v, envName{}, false), true
 	case reflect.Map: // inside a list
-		return w.entries(v, envName{}, false), true
+		inner, ok := w.into(v)
+		if !ok {
+			return nil, false
+		}
+
+		return inner.entries(v, envName{}, false), true
 	default: // funcs, channels: not a config value
 		return nil, false
 	}
