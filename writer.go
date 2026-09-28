@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"reflect"
 	"slices"
@@ -205,7 +206,8 @@ func (w walker) into(v reflect.Value) (walker, bool) {
 func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 	var out []*node
 
-	own := make(map[*node]bool) // the nodes of fields of v, not of inlined ones
+	own := make(map[*node]bool)   // the nodes of fields of v, not of inlined ones
+	keys := make(map[string]bool) // their keys, a left out one's too: it would still read into it
 
 	for field, value := range v.Fields() {
 		key, inline, skip := w.key(field)
@@ -225,22 +227,22 @@ func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 			n.def = field.Tag.Get(defaultTagName)
 		}
 
+		keys[strings.ToLower(key)] = true
+
 		if w.fill(n, value, env.field(field)) {
 			out, own[n] = append(out, n), true
 		}
 	}
 
-	return unshadowed(out, own)
+	return unshadowed(out, own, keys)
 }
 
 // unshadowed leaves out a node of an inlined field whose key a field of the struct
-// itself, or an earlier inlined field, already has: in Go the field of an embedded
-// struct is shadowed by one of the same name, and keys match case-insensitively.
-func unshadowed(nodes []*node, own map[*node]bool) []*node {
-	keys := make(map[string]bool, len(nodes))
-	for n := range own {
-		keys[strings.ToLower(n.key)] = true
-	}
+// itself (own, with its keys, even a nil one's), or an earlier inlined field, already
+// has: in Go the field of an embedded struct is shadowed by one of the same name, and
+// keys match case-insensitively.
+func unshadowed(nodes []*node, own map[*node]bool, keys map[string]bool) []*node {
+	keys = maps.Clone(keys)
 
 	return slices.DeleteFunc(nodes, func(n *node) bool {
 		key := strings.ToLower(n.key)
