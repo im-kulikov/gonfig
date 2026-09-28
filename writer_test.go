@@ -68,6 +68,7 @@ type roundTrip struct {
 	Routes   map[string]string `yaml:"routes"   json:"routes"   toml:"routes"   env:"ROUTES"`
 
 	Servers map[string]rtInner `yaml:"servers"  json:"servers"  toml:"servers"  env:"SERVERS"`
+	Empty   map[string]int     `yaml:"empty"    json:"empty"    toml:"empty"    env:"EMPTY"`
 
 	Hooks []map[string]string `yaml:"hooks" json:"hooks" toml:"hooks" env:"-"` // env cannot hold maps in a list
 }
@@ -107,6 +108,7 @@ func newRoundTrip(t *testing.T) roundTrip {
 		Seed:       math.MaxUint64,
 		Complex:    complex(1.5, -2),
 		Routes:     map[string]string{"404": "a", "true": "b", "null": "c", "<<": "d", "1.10": "e"},
+		Empty:      map[string]int{},
 		Servers:    map[string]rtInner{"main": {Name: "m", Wait: time.Second}, "replica": {Name: "r"}},
 		Hooks:      []map[string]string{{"url": "http://x"}, {"url": "http://y", "404": "z"}},
 	}
@@ -156,7 +158,7 @@ func TestWrite_RoundTrip(t *testing.T) {
 		var got roundTrip
 		loadEnvOutput(t, output, &got)
 
-		want.Password, want.Items, want.Hooks = "", nil, nil
+		want.Password, want.Items, want.Hooks, want.Empty = "", nil, nil, nil // env has no empty map
 		assert.Equal(t, want, got, output)
 	})
 }
