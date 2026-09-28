@@ -450,3 +450,74 @@ func TestFileLoader_ListsReplace(t *testing.T) {
 
 	require.ErrorContains(t, loadFile(t, ParserYAML, "pair: [1, 2, 3]\n", &config), "length less or equal to 2")
 }
+
+// TestFileLoader_Values pins how scalars of each format reach the fields: as yaml.v3,
+// encoding/json and go-toml read them, but a number must fit its field.
+//
+//nolint:funlen // a table
+func TestFileLoader_Values(t *testing.T) {
+	type values struct {
+		Str    string            `yaml:"str" json:"str" toml:"str"`
+		Strs   []string          `yaml:"strs" json:"strs" toml:"strs"`
+		Bool   bool              `yaml:"bool" json:"bool" toml:"bool"`
+		Int    int               `yaml:"int" json:"int" toml:"int"`
+		Int64  int64             `yaml:"int64" json:"int64" toml:"int64"`
+		Uint16 uint16            `yaml:"uint16" json:"uint16" toml:"uint16"`
+		Wait   time.Duration     `yaml:"wait" json:"wait" toml:"wait"`
+		Time   time.Time         `yaml:"time" json:"time" toml:"time"`
+		At     *time.Time        `yaml:"at" json:"at" toml:"at"`
+		Level  slog.Level        `yaml:"level" json:"level" toml:"level"`
+		Labels map[string]string `yaml:"labels" json:"labels" toml:"labels"`
+		Any    any               `yaml:"any" json:"any" toml:"any"`
+	}
+
+	date := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		kind    ParserType
+		content string
+		want    values
+		err     string
+	}{
+		{kind: ParserYAML, content: "str: 1.10\nstrs: [1, true, 2024-01-02]\nbool: yes\nint: 0x1F\nwait: 3s\n" +
+			"time: 2024-01-02\nat: 2024-01-02\nlevel: warn\nlabels: {404: x, true: y}\nany: {a: [1, 1.5, x]}",
+			want: values{Str: "1.10", Strs: []string{"1", "true", "2024-01-02"}, Bool: true, Int: 31, Wait: 3 * time.Second,
+				Time: date, At: &date, Level: slog.LevelWarn, Labels: map[string]string{"404": "x", "true": "y"},
+				Any: map[string]any{"a": []any{1, 1.5, "x"}}}},
+		{kind: ParserYAML, content: "base: &base {404: x}\nlabels: {<<: *base, b: y}\nbool: off",
+			want: values{Labels: map[string]string{"404": "x", "b": "y"}}},
+		{kind: ParserYAML, content: `bool: "true"`, want: values{Bool: true}},
+		{kind: ParserYAML, content: "int: 1\nint: 2", err: "already defined"},
+		{kind: ParserYAML, content: "strs: [{a: 1, a: 2}]", err: "already defined"},
+		{kind: ParserYAML, content: "int: !!int abc", err: "abc"},
+		{kind: ParserYAML, content: "uint16: 70000", err: "70000 does not fit in uint16"},
+		{kind: ParserYAML, content: "int: 2.9", err: "2.9 does not fit in int"},
+		{kind: ParserYAML, content: "int64: 9223372036854775808", err: "does not fit in int64"},
+		{kind: ParserYAML, content: "wait: 30", err: "missing unit in duration"},
+		{kind: ParserYAML, content: "level: -4", err: "level"},
+		{kind: ParserYAML, content: "- a", err: "not a mapping of keys"},
+		{kind: ParserJSON, content: `{"int": 2.0, "wait": 5000000000, "any": {"a": [1, 9007199254740993, "x"]}}`,
+			want: values{Int: 2, Wait: 5 * time.Second, Any: map[string]any{"a": []any{1.0, 9007199254740992.0, "x"}}}},
+		{kind: ParserJSON, content: `{"int64": 9223372036854775808}`, err: "does not fit in int64"},
+		{kind: ParserJSON, content: `{"wait": 1.5}`, err: "1.5 does not fit in time.Duration"},
+		{kind: ParserTOML, content: "time = 2024-01-02\nat = 2024-01-02T03:04:05",
+			want: values{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local),
+				At: new(time.Date(2024, 1, 2, 3, 4, 5, 0, time.Local))}},
+		{kind: ParserTOML, content: "time = 03:04:05", err: "the time of day 03:04:05 has no date"},
+		{kind: ParserTOML, content: "uint16 = -1", err: "-1 does not fit in uint16"},
+	} {
+		t.Run(string(tc.kind)+" "+tc.content, func(t *testing.T) {
+			var got values
+
+			err := loadFile(t, tc.kind, tc.content, &got)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
