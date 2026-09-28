@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strconv"
@@ -450,4 +451,30 @@ func TestLoadEnvs_NameOfContainerAlone(t *testing.T) {
 
 	assert.Equal(t, "localhost", v.DB.Host)
 	assert.Nil(t, v.Labels)
+}
+
+func TestLoadEnvs_ListItems(t *testing.T) {
+	var config struct {
+		IPs    []net.IP         `env:"IPS"`
+		Addrs  []netip.Addr     `env:"ADDRS"`
+		Levels []slog.Level     `env:"LEVELS"`
+		Times  []time.Time      `env:"TIMES"`
+		Pair   [2]int           `env:"PAIR" default:"1,2"`
+		Waits  [2]time.Duration `env:"WAITS"`
+	}
+
+	require.NoError(t, SetDefaults(&config))
+	require.NoError(t, LoadEnvs(PrepareEnvs([]string{
+		"IPS=10.0.0.1,::1", "ADDRS=10.0.0.2", "LEVELS=INFO,debug", "TIMES=2026-01-02T03:04:05Z", "PAIR=7", "WAITS=1s,2m",
+	}, ""), &config))
+
+	assert.Equal(t, []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("::1")}, config.IPs)
+	assert.Equal(t, []netip.Addr{netip.MustParseAddr("10.0.0.2")}, config.Addrs)
+	assert.Equal(t, []slog.Level{slog.LevelInfo, slog.LevelDebug}, config.Levels)
+	assert.Equal(t, []time.Time{time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}, config.Times)
+	assert.Equal(t, [2]int{7, 0}, config.Pair, "a variable replaces the default of an array")
+	assert.Equal(t, [2]time.Duration{time.Second, 2 * time.Minute}, config.Waits)
+
+	require.ErrorContains(t, LoadEnvs(PrepareEnvs([]string{"PAIR=5,6,7"}, ""), &config), "length less or equal to 2")
+	require.ErrorContains(t, LoadEnvs(PrepareEnvs([]string{"ADDRS=nope"}, ""), &config), "ADDRS")
 }
