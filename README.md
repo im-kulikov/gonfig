@@ -6,17 +6,40 @@
 ![Go version](https://img.shields.io/github/go-mod/go-version/im-kulikov/gonfig?style=flat&label=Go%20%3E%3D)
 [![PkgGoDev](https://pkg.go.dev/badge/mod/github.com/im-kulikov/gonfig)](https://pkg.go.dev/mod/github.com/im-kulikov/gonfig)
 
-**gonfig** loads a Go struct from defaults, config files (YAML, JSON, TOML), environment variables and
-command-line flags, with one set of rules for every source. Struct tags are the whole setup: no key
-registration, no global state.
+**Configuration for Go programs, described once in struct tags.**
 
-- one struct, four sources, a fixed priority;
-- `--help` lists every flag and environment variable, `--print-config` writes a documented template;
-- secrets are hidden from help and exports, strict mode catches typos in config files;
-- other sources plug in through a small `Parser` interface.
+gonfig fills a Go struct from defaults, config files (YAML, JSON, TOML), environment variables and
+command-line flags. The struct is the whole setup: no keys to register, no variables or flags to bind by
+hand, no global state, and one set of rules for every source.
 
-Every feature has a runnable, tested example in [example_test.go](example_test.go), also on
-[pkg.go.dev](https://pkg.go.dev/github.com/im-kulikov/gonfig#pkg-examples).
+## Why gonfig
+
+- **One struct, four sources, a fixed priority.** Defaults, then the config file, then environment
+  variables, then flags. The tags of a field say where it comes from.
+- **The same rules everywhere.** `"5s"` is a `time.Duration`, `10.0.0.0/8` a `net.IPNet`, `warn` a
+  `slog.Level`, in YAML, JSON, TOML, environment variables, flags and `default` tags alike. Any type with
+  `UnmarshalText` works in every source.
+- **It documents itself.** `--help` lists every flag and every environment variable with its type and
+  default. `--print-config` writes the loaded config as YAML, JSON, TOML or a `.env` file, with a comment
+  above every value, and the output loads back as it is.
+- **Safe by default.** Secrets never show up in `--help`, printed configs or flag errors. Strict mode turns
+  a typo in a config file into an error instead of a silently ignored key.
+- **Validation included.** `required:"true"` and your `Validate()` methods run on nested structs, lists and
+  maps, and errors name the path: `Items[1].Host`, `Server: port 80 is privileged`.
+- **Optional sections.** A `*Struct` field stays nil until a source sets it, so "not configured" is a real
+  state, with its own defaults and required fields.
+- **Fits in.** Read the config from an `embed.FS`, add another source through the small `Parser`
+  interface, share one `Parser` between goroutines, and test without touching `os.Args` or the environment.
+- **Tested.** The race detector and nightly fuzzing run in CI, and every feature has a runnable example in
+  [example_test.go](example_test.go), also on [pkg.go.dev](https://pkg.go.dev/github.com/im-kulikov/gonfig#pkg-examples).
+
+**Contents:** [Installation](#installation) · [Quick start](#quick-start) ·
+[Sources and priority](#sources-and-priority) · [Struct tags](#struct-tags) ·
+[Environment variables](#environment-variables) · [Config files](#config-files) · [Flags](#flags) ·
+[Defaults](#defaults) · [Sections](#sections) · [Secrets](#secrets) ·
+[Print the configuration](#print-the-configuration) · [Validation](#validation) ·
+[Custom parsers](#custom-parsers) · [Options](#options) · [Limitations](#limitations) ·
+[Upgrading to v0.7](#upgrading-to-v07)
 
 ## Installation
 
@@ -24,7 +47,7 @@ Every feature has a runnable, tested example in [example_test.go](example_test.g
 go get github.com/im-kulikov/gonfig
 ```
 
-Go 1.26 or newer; the two latest Go releases are supported.
+Requires Go 1.26 or newer; CI tests the two latest Go releases.
 
 ## Quick start
 
@@ -58,27 +81,43 @@ func main() {
 }
 ```
 
+That is all it takes to get a documented command line:
+
 ```console
-$ PASSWORD=secret ./app --config config.yaml --port 9090
-$ ./app --help                        # every flag and environment variable
-$ ./app --print-config > config.yaml  # a documented template of the whole config
+$ ./app --help
+Usage of flags:
+  -c, --config string                  path to config file
+      --host string                    server host (default "localhost")
+      --port int                       server port (default 8080)
+      --print-config format[="yaml"]   print the loaded config in format (yaml, json, toml or env) without secrets and exit
+
+Environment variables:
+  - 'HOST' <string> — server host (default: localhost)
+  - 'PORT' <int> — server port (default: 8080)
+  - 'TIMEOUT' <time.Duration> (default: 5s)
+  - 'PASSWORD' <string> (secret)
+```
+
+```console
+$ PASSWORD=secret ./app --config config.yaml --port 9090  # the flag wins over the file
+$ ./app --print-config > config.yaml                       # a documented template of the whole config
 ```
 
 ## Sources and priority
 
-Every source overrides the previous ones:
+Each source overrides the ones before it:
 
-1. **Defaults** — `default` tags, and `WithDefaults`, which wins over the tags.
-2. **Config file** — the path is pre-scanned from the flags: `--config` / `-c` with `DefaultConfigFlag`,
-   or the string field tagged `flag:"...,config:true"`; without its flag that field takes the path from its
-   variable (`env:"CONFIG"`), else from its own value (`default:"/etc/app.yaml"`, `WithDefaults`, the code).
-   Custom parsers run at this step too.
+1. **Defaults:** `default` tags, and `WithDefaults`, which wins over the tags.
+2. **Config file.** Its path comes from `--config` / `-c` with `DefaultConfigFlag`, or from a string field
+   tagged `flag:"...,config:true"`; this flag is read before all the others. Without the flag, that field
+   takes the path from its variable (`env:"CONFIG"`), else from its own value (`default:"/etc/app.yaml"`,
+   `WithDefaults`, the code). Custom parsers run at this step too.
 3. **Environment variables.**
 4. **Flags.**
 
-The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off, a custom parser that
-replaces it too (`SkipFlags` also turns off the config path). After loading, `required` fields are checked and
-`Validate()` is called.
+The order is fixed. `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off, even when a custom
+parser replaces it; `SkipFlags` also turns off the config path. After loading, `required` fields are checked
+and `Validate()` is called.
 
 ## Struct tags
 
@@ -289,7 +328,8 @@ func (c *Config) Validate() error {
 
 ## Custom parsers
 
-You can implement your own configuration loaders by implementing the `Parser` interface and registering it with `WithCustomParser`:
+Any other source, such as a secret store or a remote config service, is a `Parser`: implement `Load` and
+`Type` and add it with `WithCustomParser`:
 
 ```go
 type CustomLoader struct{}
@@ -378,6 +418,9 @@ by `New` can be reused, also from several goroutines, as long as its custom pars
 
 ## Upgrading to v0.7
 
+The main changes are below; every change in behavior is listed in the
+[v0.7.0 release notes](https://github.com/im-kulikov/gonfig/releases/tag/v0.7.0).
+
 - Go 1.26 or newer is required; the two latest Go releases are supported.
 - `Ptr`, `True` and `False` are removed: use `new(v)`, for example `new(true)`.
 - Config files are decoded by the same rules as environment variables. An embedded struct no longer
@@ -389,3 +432,6 @@ by `New` can be reused, also from several goroutines, as long as its custom pars
 - `--help` shows the `default` tag of a flag instead of its loaded value.
 - Errors are one line and name the file: `could not parse config.yaml: ...`.
 
+## License
+
+[MIT](LICENSE)
