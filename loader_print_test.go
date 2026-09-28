@@ -62,6 +62,12 @@ required: ""
 		assert.JSONEq(t, `{"host": "localhost", "port": 9090, "token": "", "required": ""}`, out)
 	})
 
+	t.Run("the format of the file from --config", func(t *testing.T) {
+		config := writeTempFile(t, "app.toml", "port = 7070\n")
+		out, _ := printConfig(t, []string{"--config", config, "--print-config"}, nil, WithYAMLLoader(), WithTOMLLoader())
+		assert.Contains(t, out, "Port = 7070\n", "TOML, and without toml tags the keys are the field names")
+	})
+
 	t.Run("an explicit format", func(t *testing.T) {
 		out, _ := printConfig(t, []string{"--print-config=env"}, envs, WithJSONLoader())
 		assert.Contains(t, out, "APP_PORT=9090\n")

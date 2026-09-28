@@ -457,15 +457,23 @@ func (l *loader) configPathFor(typ ParserType) string {
 	return l.config
 }
 
-// fileFormat is the format of the first file loader, or YAML without one.
+// fileFormat is the format of the file loader that reads the config path, so the
+// output of --print-config reads back through --config; without a path the format
+// of the first file loader, or YAML without one.
 func (l *loader) fileFormat() Format {
-	for _, typ := range l.orders {
-		if format, ok := fileFormats[typ]; ok {
-			return Format(format.tag)
+	format := FormatYAML
+
+	for _, typ := range slices.Backward(l.orders) {
+		if file, ok := fileFormats[typ]; ok {
+			if l.config != "" && l.configPathFor(typ) != "" {
+				return Format(file.tag)
+			}
+
+			format = Format(file.tag)
 		}
 	}
 
-	return FormatYAML
+	return format
 }
 
 // Load initializes a new Parser with default settings and applies optional LoaderOptions.

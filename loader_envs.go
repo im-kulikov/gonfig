@@ -164,7 +164,7 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 
 		var usage string
 		if usage = field.Field.Tag.Get(FlagTagUsage); usage != "" {
-			usage = " — " + usage
+			usage = " — " + strings.ReplaceAll(usage, "\n", "\n    ")
 		}
 
 		if isSecret(field) {
