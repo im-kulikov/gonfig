@@ -65,10 +65,13 @@ var writers = map[Format]writer{
 // come from the format's struct tag (the field name without it), embedded
 // structs and fields tagged `,inline` (`,squash` for env) are inlined, nil
 // pointers are left out, durations, IP networks and values of types with both
-// MarshalText and UnmarshalText are written as text. Fields are written in the order they are declared.
+// MarshalText and UnmarshalText are written as text. Fields are written in the
+// order they are declared.
 //
 // A value the format cannot hold is an error: in FormatEnv a line break in a value
-// (ErrEnvValue). A value whose MarshalText fails is left out.
+// (ErrEnvValue). A value whose MarshalText fails is left out, and so is a list with
+// an item that cannot be written (nil, or its MarshalText fails): a shorter list
+// would read back with its items shifted.
 //
 // Values of `secret:"true"` fields are left empty. YAML, TOML and env output
 // have a comment above every value with its `usage`, environment variable and
@@ -398,7 +401,7 @@ func (w walker) value(v reflect.Value) (any, bool) {
 			return nil, false
 		}
 
-		return inner.list(v), true
+		return inner.list(v)
 	case reflect.Pointer, reflect.Interface:
 		inner, ok := w.into(v)
 		if v.IsNil() || !ok {
@@ -422,16 +425,19 @@ func (w walker) value(v reflect.Value) (any, bool) {
 	}
 }
 
-func (w walker) list(v reflect.Value) []any {
+func (w walker) list(v reflect.Value) ([]any, bool) {
 	out := make([]any, 0, v.Len())
 
 	for i := range v.Len() {
-		if value, ok := w.value(v.Index(i)); ok {
-			out = append(out, value)
+		value, ok := w.value(v.Index(i))
+		if !ok {
+			return nil, false // not a shorter list: the items after it would read back shifted
 		}
+
+		out = append(out, value)
 	}
 
-	return out
+	return out, true
 }
 
 var (
