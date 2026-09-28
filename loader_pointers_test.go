@@ -167,7 +167,8 @@ func TestUsageOfEnvs_Sections(t *testing.T) {
 	assert.NotContains(t, usage, "<*gonfig.ptrTLS>")
 	assert.Nil(t, v.TLS, "the struct passed in is not changed")
 
-	assert.Equal(t, "Environment variables:\n  - 'NAME' <string>\n  - 'NEXT' <*gonfig.ptrNode>", UsageOfEnvs(&ptrNode{}))
+	assert.Equal(t, "Environment variables:\n  - 'NAME' <string>", UsageOfEnvs(&ptrNode{}),
+		"a section of its own type is not listed, and not as one variable NEXT either")
 }
 
 func TestPointers_SkipDefaults(t *testing.T) {

@@ -70,7 +70,9 @@ Every source overrides the previous ones:
 
 1. **Defaults** — `default` tags, and `WithDefaults`, which wins over the tags.
 2. **Config file** — the path is pre-scanned from the flags: `--config` / `-c` with `DefaultConfigFlag`,
-   or the string field tagged `flag:"...,config:true"`. Custom parsers run at this step too.
+   or the string field tagged `flag:"...,config:true"`; without its flag that field takes the path from its
+   variable (`env:"CONFIG"`), else from its own value (`default:"/etc/app.yaml"`, `WithDefaults`, the code).
+   Custom parsers run at this step too.
 3. **Environment variables.**
 4. **Flags.**
 

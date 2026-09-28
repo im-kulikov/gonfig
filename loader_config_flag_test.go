@@ -1,8 +1,10 @@
 package gonfig
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -122,4 +124,40 @@ func TestConfigField_InvalidFlag(t *testing.T) {
 		Other string `flag:"config,config:true"`
 	}
 	require.ErrorIs(t, load(&twice), ErrFlagRedefined)
+}
+
+func TestConfigField_PathSources(t *testing.T) {
+	type config struct {
+		Path string `flag:"config,config:true" env:"CONFIG" default:"default.yaml"`
+		Name string `yaml:"name"`
+	}
+
+	files := map[string]string{}
+	for _, name := range []string{"default.yaml", "env.yaml", "flag.yaml", "code.yaml"} {
+		files[name] = writeTempFile(t, name, "name: "+name)
+	}
+
+	load := func(args, envs []string, options ...LoaderOption) config {
+		var v config
+		if path, ok := files["default.yaml"]; ok { // the default tag names a file next to the test
+			t.Chdir(filepath.Dir(path))
+		}
+
+		options = append(options, WithYAMLLoader(), WithConfig(func(c *Config) {
+			c.Args, c.Envs, c.EnvPrefix = args, envs, "APP"
+		}))
+		require.NoError(t, Load(&v, options...))
+
+		return v
+	}
+
+	assert.Equal(t, "default.yaml", load(nil, nil).Name, "the default tag")
+	assert.Equal(t, "env.yaml", load(nil, []string{"APP_CONFIG=" + files["env.yaml"]}).Name, "the variable")
+	flag := []string{"--config", files["flag.yaml"]}
+	assert.Equal(t, "flag.yaml", load(flag, []string{"APP_CONFIG=" + files["env.yaml"]}).Name, "the flag")
+	assert.Equal(t, "code.yaml", load(nil, nil, WithDefaults("flag", map[string]any{"config": files["code.yaml"]})).Name,
+		"WithDefaults")
+
+	got := load(nil, []string{"APP_CONFIG=" + files["env.yaml"]})
+	assert.Equal(t, files["env.yaml"], got.Path, "the field tells the file that was read")
 }
