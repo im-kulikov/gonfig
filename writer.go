@@ -275,7 +275,8 @@ func (w walker) inlined(v reflect.Value, env envName, secret bool) []*node {
 }
 
 // key returns the key of a field, whether the field is inlined into its parent,
-// or whether it is left out, by the same rules the loader decodes with.
+// or whether it is left out, by the same rules the loader decodes with: a map is
+// inlined, a pointer to a map is not (see inlineKeys).
 func (w walker) key(field reflect.StructField) (key string, inline, skip bool) {
 	parts := strings.Split(field.Tag.Get(w.tag), ",")
 	elem := derefType(field.Type)
@@ -288,7 +289,8 @@ func (w walker) key(field reflect.StructField) (key string, inline, skip bool) {
 		return "", true, false
 	case !field.IsExported():
 		return "", false, true
-	case slices.Contains(parts[1:], w.inline) && (isStruct || w.inline == fileInlineOption && elem.Kind() == reflect.Map):
+	case slices.Contains(parts[1:], w.inline) &&
+		(isStruct || w.inline == fileInlineOption && field.Type.Kind() == reflect.Map):
 		return "", true, false
 	case parts[0] == "":
 		return field.Name, false, false
