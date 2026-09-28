@@ -222,6 +222,8 @@ type badText struct{}
 
 func (badText) MarshalText() ([]byte, error) { return nil, errors.New("cannot marshal") }
 
+func (*badText) UnmarshalText([]byte) error { return nil }
+
 type left struct {
 	Nil       *rtInner          `yaml:"nil"`
 	Network   net.IPNet         `yaml:"network"`
@@ -321,6 +323,29 @@ func TestWrite_EnvCannotHold(t *testing.T) {
 type shadowBase struct {
 	Name string `yaml:"name" json:"name" toml:"name"`
 	Port int    `yaml:"port" json:"port" toml:"port"`
+}
+
+// marshalOnly has no UnmarshalText: the loader reads its fields, not a text.
+type marshalOnly struct {
+	A int `yaml:"a" json:"a" toml:"a"`
+}
+
+func (marshalOnly) MarshalText() ([]byte, error) { return []byte("text"), nil }
+
+func TestWrite_MarshalTextOnly(t *testing.T) {
+	type config struct {
+		V marshalOnly `yaml:"v" json:"v" toml:"v"`
+	}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &config{V: marshalOnly{A: 1}}, format)
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Equal(t, 1, got.V.A)
+		})
+	}
 }
 
 func TestWrite_EmbeddedTextStruct(t *testing.T) {
