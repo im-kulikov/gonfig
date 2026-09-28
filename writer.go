@@ -70,8 +70,9 @@ var writers = map[Format]writer{
 //
 // A value the format cannot hold is an error: in FormatEnv a line break in a value
 // (ErrEnvValue). A value whose MarshalText fails is left out, and so is a list or a
-// map with an item that cannot be written (nil, or its MarshalText fails): it would
-// read back without the item, the items of a list after it shifted.
+// map with an item that cannot be written (a nil pointer or interface, or one whose
+// MarshalText fails): it would read back without the item, the items of a list after
+// it shifted. A nil list is written as an empty one.
 //
 // Values of `secret:"true"` fields are left empty. YAML, TOML and env output
 // have a comment above every value with its `usage`, environment variable and
