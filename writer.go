@@ -359,10 +359,14 @@ func (w walker) entries(v reflect.Value, env envName, secret bool) []*node {
 	out := make([]*node, 0, v.Len())
 
 	for key, value := range v.Seq2() {
-		name := fmt.Sprint(key.Interface())
+		name, ok := fmt.Sprint(key.Interface()), true
+		if isTextValue(key.Type()) {
+			name, ok = textOf(key) // as the loader reads it: a time.Time in RFC 3339
+		}
+
 		n := &node{key: name, secret: secret, entry: true}
 
-		if w.fill(n, value, env.key(name)) {
+		if ok && w.fill(n, value, env.key(name)) {
 			out = append(out, n)
 		}
 	}
