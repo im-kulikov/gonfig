@@ -290,6 +290,12 @@ func TestWrite_EnvCannotHold(t *testing.T) {
 		"= in a map key": &struct {
 			Labels map[string]string `env:"LABELS"`
 		}{Labels: map[string]string{"a=b": "c"}},
+		"_ in a key of a map of structs": &struct {
+			Servers map[string]rtInner `env:"SERVERS"`
+		}{Servers: map[string]rtInner{"team_name": {Name: "x"}}},
+		"no key in a map of maps": &struct {
+			Nested map[string]map[string]int `env:"NESTED"`
+		}{Nested: map[string]map[string]int{"": {"a": 1}}},
 		"no map key": &struct {
 			Labels map[string]string `env:"LABELS"`
 		}{Labels: map[string]string{"": "c"}},
