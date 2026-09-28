@@ -353,3 +353,21 @@ func TestWrite_ShadowedByNil(t *testing.T) {
 		})
 	}
 }
+
+func TestWrite_PointerToMapNotInlined(t *testing.T) {
+	type config struct {
+		Name  string             `yaml:"name" json:"name" toml:"name"`
+		Extra *map[string]string `yaml:",inline" json:",inline" toml:",inline"` // a map is inlined, a pointer to one is not
+	}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			want := config{Name: "x", Extra: &map[string]string{"foo": "bar"}}
+			output := write(t, &want, format)
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Equal(t, want, got, output)
+		})
+	}
+}
