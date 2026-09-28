@@ -259,8 +259,8 @@ func TestWrite_LeavesOut(t *testing.T) {
 		Untag:     "untagged",
 	}
 
-	assert.Equal(t, "complex: (0+1i)\nkept: kept\nmixed:\n  - a\n  - 1\npointers:\n  - 1\nmaps:\n  - \"1\": 1\n"+
-		"keys:\n  a b: 1\nUntag: untagged\n", write(t, &v, FormatYAML))
+	assert.Equal(t, "complex: (0+1i)\nkept: kept\npointers:\n  - 1\nmaps:\n  - \"1\": 1\n"+
+		"keys:\n  a b: 1\nUntag: untagged\n", write(t, &v, FormatYAML), "mixed has a nil item: left out as a whole")
 	assert.Equal(t, "\n[Keys]\n\"a b\" = 1\n", write(t, &struct {
 		Keys map[string]int
 	}{Keys: map[string]int{"a b": 1}}, FormatTOML))
@@ -282,6 +282,27 @@ func TestWrite_Errors(t *testing.T) {
 	require.ErrorIs(t, Write(&bytes.Buffer{}, v, FormatYAML), ErrExpectPointer)
 	require.ErrorIs(t, Write(&bytes.Buffer{}, new(int), FormatYAML), ErrExpectStruct)
 	require.EqualError(t, Write(failWriter{}, &v, FormatYAML), "disk full")
+}
+
+func TestWrite_ListWithItemLeftOut(t *testing.T) {
+	type config struct {
+		Ports []*int    `yaml:"ports" json:"ports" toml:"ports"`
+		Bad   []badText `yaml:"bad"   json:"bad"   toml:"bad"`
+	}
+
+	one, three := 1, 3
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &config{Ports: []*int{&one, nil, &three}, Bad: []badText{{}}}, format)
+			assert.NotContains(t, output, "ports", "not [1, 3], read back shifted")
+			assert.NotContains(t, output, "bad")
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Nil(t, got.Ports)
+		})
+	}
 }
 
 func TestWrite_EnvCannotHold(t *testing.T) {
@@ -510,7 +531,7 @@ func TestWrite_MapAndListCycles(t *testing.T) {
 		Inline map[string]any `yaml:",inline"`
 	}
 
-	assert.Equal(t, "map:\n  a: 1\nlist:\n  - 1\nnested:\n  list: []\na: 1\n",
+	assert.Equal(t, "map:\n  a: 1\nnested: {}\na: 1\n",
 		write(t, &config{Map: m, List: l, Nested: n, Inline: m}, FormatYAML),
 		"a map or a list inside itself is left out, not written forever")
 }
