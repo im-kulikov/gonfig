@@ -328,3 +328,41 @@ func TestLoadingOrder(t *testing.T) {
 		assert.Equal(t, "flag-val", cfg.Value)
 	})
 }
+
+// cycleNode embeds a pointer to itself, and Next may point back at it: nothing may
+// recurse forever on it, a fatal stack overflow that recover cannot catch.
+type cycleNode struct {
+	*cycleNode //nolint:unused // embeds a pointer to its own type
+	PrintConfigFlag
+
+	Name   string     `yaml:"name" json:"name" env:"NAME" flag:"name" default:"n" required:"true"`
+	Next   *cycleNode `yaml:"next" json:"next" env:"NEXT"`
+	Inline *cycleNode `yaml:",inline" json:",inline"`
+}
+
+func (c *cycleNode) Validate() error { return nil }
+
+func TestCycles(t *testing.T) {
+	var v cycleNode
+	v.Next, v.Inline = &v, &v
+
+	var out bytes.Buffer
+	load := func(args ...string) error {
+		return Load(&v, WithYAMLLoader(), WithCustomOutput(&out), WithCustomExit(func(int) {}),
+			WithConfig(func(c *Config) { c.Args, c.Envs = args, []string{"NAME=x", "NEXT_NAME=y"} }))
+	}
+
+	require.NoError(t, load())
+	assert.Equal(t, "y", v.Name, "NEXT_NAME sets the same struct, after NAME")
+	assert.Same(t, &v, v.Next, "the cycle is kept")
+	require.ErrorIs(t, load("--help"), ErrTestExit)
+	require.ErrorIs(t, load("--print-config"), ErrTestExit)
+	assert.Contains(t, out.String(), `name: "y"`, "quoted: y is a bool in YAML 1.1")
+
+	require.NoError(t, loadFile(t, ParserYAML, "name: file\nnext: {name: next}", &v))
+	assert.Equal(t, "next", v.Name)
+
+	for format := range writers {
+		require.NoError(t, Write(&out, &v, format), format)
+	}
+}

@@ -91,7 +91,7 @@ func Write(w io.Writer, v any, format Format, options ...WriteOption) error {
 		return fmt.Errorf("%w, got %q", ErrExpectStruct, root.Elem().Kind())
 	}
 
-	walk := walker{tag: out.tag, inline: out.inline}
+	walk := walker{tag: out.tag, inline: out.inline, way: []visit{visitOf(root)}}
 
 	var buf bytes.Buffer
 	if err := out.print(&buf, walk.fields(root.Elem(), envName{ok: true}, false), opts.envPrefix); err != nil {
@@ -183,6 +183,23 @@ func (e envName) key(key string) envName {
 type walker struct {
 	tag    string
 	inline string
+	way    []visit // the structs being written, from the root: a pointer back to one is left out
+}
+
+// into returns the walker for the value v points to; false for a pointer back to a
+// struct being written, a cycle.
+func (w walker) into(v reflect.Value) (walker, bool) {
+	if v.Kind() != reflect.Pointer {
+		return w, true
+	}
+
+	if slices.Contains(w.way, visitOf(v)) {
+		return w, false
+	}
+
+	w.way = append(slices.Clip(w.way), visitOf(v))
+
+	return w, true
 }
 
 func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
@@ -247,7 +264,9 @@ func (w walker) inlined(v reflect.Value, env envName, secret bool) []*node {
 	case v.Kind() == reflect.Struct:
 		return w.fields(v, env, secret)
 	case v.Kind() == reflect.Pointer && !v.IsNil():
-		return w.fields(v.Elem(), env, secret)
+		if inner, ok := w.into(v); ok {
+			return inner.fields(v.Elem(), env, secret)
+		}
 	}
 
 	return nil
@@ -281,7 +300,13 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 	switch {
 	case isTextValue(v.Type()):
 	case v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface:
-		return !v.IsNil() && w.fill(n, v.Elem(), env)
+		if v.IsNil() {
+			return false
+		}
+
+		inner, ok := w.into(v)
+
+		return ok && inner.fill(n, v.Elem(), env)
 	case v.Kind() == reflect.Struct:
 		n.section, n.children = true, w.fields(v, env, n.secret)
 
@@ -348,11 +373,12 @@ func (w walker) value(v reflect.Value) (any, bool) {
 	case reflect.Slice, reflect.Array:
 		return w.list(v), true
 	case reflect.Pointer, reflect.Interface:
-		if v.IsNil() {
+		inner, ok := w.into(v)
+		if v.IsNil() || !ok {
 			return nil, false
 		}
 
-		return w.value(v.Elem())
+		return inner.value(v.Elem())
 	case reflect.Complex64, reflect.Complex128:
 		return strconv.FormatComplex(v.Complex(), 'g', -1, v.Type().Bits()), true
 	case reflect.Struct:

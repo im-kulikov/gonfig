@@ -410,7 +410,11 @@ func isContainer(t reflect.Type) bool {
 }
 
 // resolveClashes fixes the values of the fields of t in tree, see envClashHook.
-func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
+func resolveClashes(tree map[string]any, t reflect.Type, inlined ...reflect.Type) map[string]any {
+	if slices.Contains(inlined, t) { // a struct that embeds a pointer to itself
+		return tree
+	}
+
 	for field := range t.Fields() {
 		parts := strings.Split(field.Tag.Get(envTag), ",")
 
@@ -419,7 +423,7 @@ func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
 
 		switch key, found := lookupKey(tree, parts[0]); {
 		case parts[0] == "" && container && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
-			resolveClashes(tree, kind) // inlined: its fields read from this level
+			resolveClashes(tree, kind, append(inlined, t)...) // inlined: its fields read from this level
 		case !found:
 		case container:
 			nested, isTree := tree[key].(map[string]any)
@@ -441,9 +445,13 @@ func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
 
 // setsField reports whether the names under the name of a struct or a map t set
 // anything in it: a section, a pointer to a struct, is created only then.
-func setsField(tree map[string]any, t reflect.Type) bool {
+func setsField(tree map[string]any, t reflect.Type, inlined ...reflect.Type) bool {
 	if t.Kind() == reflect.Map {
 		return len(tree) > 0
+	}
+
+	if slices.Contains(inlined, t) { // a struct that embeds a pointer to itself
+		return false
 	}
 
 	for field := range t.Fields() {
@@ -455,7 +463,7 @@ func setsField(tree map[string]any, t reflect.Type) bool {
 
 		switch {
 		case parts[0] == "" && isContainer(kind) && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
-			if setsField(tree, kind) {
+			if setsField(tree, kind, append(inlined, t)...) {
 				return true
 			}
 		case !found:

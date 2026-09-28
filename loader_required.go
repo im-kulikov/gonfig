@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -90,7 +91,7 @@ func ValidateRequiredFields(input any) error {
 // structs first and v itself last, and joins their errors. An error of v alone is
 // returned as is. v is a pointer to a struct: ValidateRequiredFields has checked it.
 func validate(v any) error {
-	errs := validateFields(reflect.ValueOf(v).Elem(), "")
+	errs := validateFields(reflect.ValueOf(v).Elem(), "", nil)
 
 	if root, ok := v.(LoaderValidator); ok {
 		if err := root.Validate(); err != nil && len(errs) == 0 {
@@ -105,11 +106,17 @@ func validate(v any) error {
 
 // validateFields validates the nested structs of v, depth first, and the sections
 // behind non-nil pointers to structs.
-func validateFields(v reflect.Value, path string) []error {
+func validateFields(v reflect.Value, path string, way []visit) []error {
 	var errs []error
+
+	way = append(slices.Clip(way), visit{v.Addr().Pointer(), v.Type()})
 
 	for field, value := range v.Fields() {
 		if value.Kind() == reflect.Pointer && !value.IsNil() {
+			if slices.Contains(way, visitOf(value)) { // a pointer back: a cycle
+				continue
+			}
+
 			value = value.Elem()
 		}
 
@@ -122,7 +129,7 @@ func validateFields(v reflect.Value, path string) []error {
 			name = strings.TrimPrefix(path+"."+field.Name, ".")
 		}
 
-		errs = append(errs, validateFields(value, name)...)
+		errs = append(errs, validateFields(value, name, way)...)
 
 		if field.Anonymous { // its Validate, if any, is promoted to the parent
 			continue
