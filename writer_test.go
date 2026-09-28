@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"bytes"
+	"encoding"
 	"errors"
 	"log/slog"
 	"math"
@@ -370,4 +371,17 @@ func TestWrite_PointerToMapNotInlined(t *testing.T) {
 			assert.Equal(t, want, got, output)
 		})
 	}
+}
+
+func TestWrite_Interfaces(t *testing.T) {
+	level := slog.LevelWarn
+
+	type config struct {
+		Level encoding.TextMarshaler `yaml:"level"`
+		Any   any                    `yaml:"any"`
+	}
+
+	assert.Equal(t, "level: WARN\nany: 1\n", write(t, &config{Level: &level, Any: 1}, FormatYAML),
+		"an interface is written as the value it holds")
+	assert.Equal(t, "{}\n", write(t, &config{}, FormatYAML), "a nil interface is left out")
 }
