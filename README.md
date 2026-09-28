@@ -365,7 +365,14 @@ by `New` can be reused, also from several goroutines, as long as its custom pars
 ## Limitations
 
 - `default` tags: list items and map entries cannot contain `,`, map keys cannot contain `:`.
+- `default` tags fill a struct a source creates behind a pointer (a section, an item of `[]*Item`), not an item
+  of `[]Item` or `map[string]Item`: give such items their values in the source.
 - No flags inside sections (pointers to structs), see [Sections](#sections).
+- Embed structs by value: an embedded pointer to a struct is read only when it is set.
+- `flag:",base:hex"` and `base:b64` apply to the flag; env and files read a `[]byte` as a list of numbers.
+- The config path is pre-scanned knowing only the config flag: in `--name -c app.yaml`, where `-c` is the
+  value of `--name`, it still reads `app.yaml`. Write `--name=-c`.
+- Env: keys of a map of structs cannot contain `_` (`DBS_main_HOST`), keys of a map of values can.
 
 ## Upgrading to v0.7
 
