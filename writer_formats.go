@@ -212,8 +212,8 @@ func tomlKey(key string) string {
 }
 
 // ErrEnvValue is returned by Write in FormatEnv for a value that a line NAME=value
-// cannot hold, so that it would not read back: a line break in a value or a map key,
-// "=" or an empty map key, a comma in a list item, "_" in a key of a map of structs
+// cannot hold, so that it would not read back: a line break or a NUL byte in a value
+// or a map key, "=" or an empty map key, a comma in a list item, "_" in a key of a map of structs
 // or maps (the next segment of a name is the key). Other formats can write it.
 const ErrEnvValue Error = "cannot be written as an environment variable"
 
@@ -255,10 +255,10 @@ func envProblem(n *node, value string) string {
 	items, _ := n.value.([]any)
 
 	switch {
-	case strings.ContainsAny(n.env, "\n\r=") || n.entry && n.key == "":
-		return `a map key is empty or has a line break or "="`
+	case strings.ContainsAny(n.env, "\n\r=\x00") || n.entry && n.key == "":
+		return `a map key is empty or has a line break, "=" or a NUL byte`
 	case strings.ContainsAny(value, "\n\r\x00"):
-		return "the value has a line break"
+		return "the value has a line break or a NUL byte"
 	case slices.ContainsFunc(items, func(item any) bool { text, _ := envValue(item); return strings.Contains(text, ",") }):
 		return "a list item has a comma"
 	}
