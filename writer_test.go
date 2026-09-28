@@ -62,6 +62,11 @@ type roundTrip struct {
 	IPs      []net.IP          `yaml:"ips"      json:"ips"      toml:"ips"      env:"IPS"`
 	Levels   []slog.Level      `yaml:"levels"   json:"levels"   toml:"levels"   env:"LEVELS"`
 	Pair     [2]int            `yaml:"pair"     json:"pair"     toml:"pair"     env:"PAIR"`
+	Seed     uint64            `yaml:"seed"     json:"seed"     toml:"seed"     env:"SEED" usage:"a seed\nAPP_INT=1"`
+	Complex  complex128        `yaml:"complex"  json:"complex"  toml:"complex"  env:"COMPLEX"`
+	Routes   map[string]string `yaml:"routes"   json:"routes"   toml:"routes"   env:"ROUTES"`
+
+	Hooks []map[string]string `yaml:"hooks" json:"hooks" toml:"hooks" env:"-"` // env cannot hold maps in a list
 }
 
 func newRoundTrip(t *testing.T) roundTrip {
@@ -73,7 +78,7 @@ func newRoundTrip(t *testing.T) roundTrip {
 	return roundTrip{
 		rtEmbedded: rtEmbedded{Level: slog.LevelWarn},
 		Inlined:    rtInner{Name: "inlined", Wait: time.Second},
-		Text:       `a&b <c> "q" \ ünï = x`,
+		Text:       "a&b <c> \"q\" \\ ünï = x \x7f",
 		Int:        -42,
 		Int8:       -8,
 		Uint:       42,
@@ -96,6 +101,10 @@ func newRoundTrip(t *testing.T) roundTrip {
 		IPs:        []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("::1")},
 		Levels:     []slog.Level{slog.LevelDebug, slog.LevelError},
 		Pair:       [2]int{3, 4},
+		Seed:       math.MaxUint64,
+		Complex:    complex(1.5, -2),
+		Routes:     map[string]string{"404": "a", "true": "b", "null": "c", "<<": "d", "1.10": "e"},
+		Hooks:      []map[string]string{{"url": "http://x"}, {"url": "http://y", "404": "z"}},
 	}
 }
 
@@ -143,7 +152,7 @@ func TestWrite_RoundTrip(t *testing.T) {
 		var got roundTrip
 		loadEnvOutput(t, output, &got)
 
-		want.Password, want.Items = "", nil
+		want.Password, want.Items, want.Hooks = "", nil, nil
 		assert.Equal(t, want, got, output)
 	})
 }
@@ -242,8 +251,8 @@ func TestWrite_LeavesOut(t *testing.T) {
 		Untag:     "untagged",
 	}
 
-	assert.Equal(t, "kept: kept\nmixed:\n  - a\n  - 1\npointers:\n  - 1\nmaps: []\nkeys:\n  a b: 1\nUntag: untagged\n",
-		write(t, &v, FormatYAML))
+	assert.Equal(t, "complex: (0+1i)\nkept: kept\nmixed:\n  - a\n  - 1\npointers:\n  - 1\nmaps:\n  - \"1\": 1\n"+
+		"keys:\n  a b: 1\nUntag: untagged\n", write(t, &v, FormatYAML))
 	assert.Equal(t, "\n[Keys]\n\"a b\" = 1\n", write(t, &struct {
 		Keys map[string]int
 	}{Keys: map[string]int{"a b": 1}}, FormatTOML))
@@ -265,4 +274,53 @@ func TestWrite_Errors(t *testing.T) {
 	require.ErrorIs(t, Write(&bytes.Buffer{}, v, FormatYAML), ErrExpectPointer)
 	require.ErrorIs(t, Write(&bytes.Buffer{}, new(int), FormatYAML), ErrExpectStruct)
 	require.EqualError(t, Write(failWriter{}, &v, FormatYAML), "disk full")
+}
+
+func TestWrite_EnvCannotHold(t *testing.T) {
+	for name, v := range map[string]any{
+		"a line break": &struct {
+			Cert string `env:"CERT"`
+		}{Cert: "-----BEGIN\nAPP_ADMIN=true"},
+		"a comma": &struct {
+			Args []string `env:"ARGS"`
+		}{Args: []string{"--opt=a,b"}},
+		"= in a map key": &struct {
+			Labels map[string]string `env:"LABELS"`
+		}{Labels: map[string]string{"a=b": "c"}},
+		"no map key": &struct {
+			Labels map[string]string `env:"LABELS"`
+		}{Labels: map[string]string{"": "c"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			require.ErrorIs(t, Write(&buf, v, FormatEnv), ErrEnvValue)
+			assert.Empty(t, buf.String(), "nothing is written")
+			require.NoError(t, Write(&buf, v, FormatYAML), "other formats hold it")
+		})
+	}
+}
+
+type shadowBase struct {
+	Name string `yaml:"name" json:"name" toml:"name"`
+	Port int    `yaml:"port" json:"port" toml:"port"`
+}
+
+func TestWrite_Shadowed(t *testing.T) {
+	type config struct {
+		shadowBase
+
+		Name string `yaml:"NAME" json:"NAME" toml:"NAME"` // shadows shadowBase.Name, keys match case-insensitively
+	}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &config{shadowBase: shadowBase{Name: "base", Port: 1}, Name: "app"}, format)
+			assert.NotContains(t, output, "base", "the shadowed field is left out")
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Equal(t, "app", got.Name)
+			assert.Equal(t, 1, got.Port)
+		})
+	}
 }
