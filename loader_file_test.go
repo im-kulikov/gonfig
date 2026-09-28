@@ -578,3 +578,28 @@ func TestFileLoader_InlineMap(t *testing.T) {
 		})
 	}
 }
+
+func TestFileLoader_JSONAfterTheObject(t *testing.T) {
+	var config struct {
+		Port int `json:"port"`
+	}
+
+	for _, content := range []string{`{"port": 1} x`, `{"port": 1}}`, `{"port": 1}{"port": 2}`} {
+		require.ErrorContains(t, loadFile(t, ParserJSON, content, &config), "after the top-level value", content)
+	}
+
+	require.NoError(t, loadFile(t, ParserJSON, "{\"port\": 1}\n\n", &config))
+}
+
+func TestFileLoader_AnyReplaced(t *testing.T) {
+	var config struct {
+		DefaultConfigFlag
+		Any any `yaml:"any" env:"ANY"`
+	}
+
+	file := writeTempFile(t, "c.yaml", "any: {a: 1}")
+	require.NoError(t, Load(&config, WithYAMLLoader(), WithConfig(func(c *Config) {
+		c.Args, c.Envs = []string{"-c", file}, []string{"ANY=x"}
+	})))
+	assert.Equal(t, "x", config.Any, "a later source replaces the value, whatever its type")
+}

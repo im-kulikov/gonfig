@@ -3,6 +3,7 @@ package gonfig
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"reflect"
 	"slices"
 	"strings"
@@ -42,37 +43,9 @@ func (e ErrMissingField) Error() string {
 // It traverses the provided struct, including nested structs, to identify any missing required fields.
 // It returns detailed error messages for all missing fields.
 func ValidateRequiredFields(input any) error {
-	var missingFields []ErrMissingField // nolint:prealloc
-	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: new(true), Pointers: true}) {
-		if err != nil {
-			return fmt.Errorf("(require) %w", err)
-		}
-
-		options := ParseTagOptions(elem.Field.Tag)
-		if !options.FieldRequired || !elem.Value.IsZero() {
-			continue
-		}
-
-		var path string
-		for owner := elem; owner != nil; owner = owner.Owner {
-			if owner.Field.Name == "" {
-				continue
-			}
-
-			if path == "" {
-				path = owner.Field.Name
-
-				continue
-			}
-
-			path = fmt.Sprintf("%s.%s", owner.Field.Name, path)
-		}
-
-		missingFields = append(missingFields, ErrMissingField{
-			Field: elem.Field.Name,
-			Type:  elem.Field.Type.String(),
-			Path:  path,
-		})
+	missingFields, err := missingFields(input, "", nil)
+	if err != nil {
+		return fmt.Errorf("(require) %w", err)
 	}
 
 	if len(missingFields) == 0 {
@@ -85,6 +58,80 @@ func ValidateRequiredFields(input any) error {
 	}
 
 	return fmt.Errorf("%w:%s", ErrMissingFields, strings.Join(lines, ""))
+}
+
+// missingFields returns the required fields of input that are empty, with the path
+// after prefix; the structs in lists and maps are checked too, Items[0].Host.
+func missingFields(input any, prefix string, way []visit) ([]ErrMissingField, error) {
+	var missing []ErrMissingField
+
+	for elem, err := range ReflectFieldsOf(input, ReflectOptions{CanInterface: new(true), Pointers: true}) {
+		if err != nil {
+			return nil, err
+		}
+
+		var names []string
+		for owner := elem; owner.Owner != nil; owner = owner.Owner {
+			names = append(names, owner.Field.Name)
+		}
+
+		slices.Reverse(names)
+		path := prefix + strings.Join(names, ".")
+
+		if ParseTagOptions(elem.Field.Tag).FieldRequired && elem.Value.IsZero() {
+			missing = append(missing, ErrMissingField{Field: elem.Field.Name, Type: elem.Field.Type.String(), Path: path})
+
+			continue
+		}
+
+		for key, item := range structElements(elem.Value, way) {
+			inner, _ := missingFields(item.Interface(), path+"["+key+"].", append(slices.Clip(way), visitOf(item))) // a *struct
+			missing = append(missing, inner...)
+		}
+	}
+
+	return missing, nil
+}
+
+// structElements yields the structs in a list or a map v, by index or key, as pointers:
+// a map value is a copy, it cannot be addressed. It skips nil pointers and pointers
+// back to a struct on the way, a cycle.
+func structElements(v reflect.Value, way []visit) iter.Seq2[string, reflect.Value] {
+	return func(yield func(string, reflect.Value) bool) {
+		if !isList(v.Kind()) && v.Kind() != reflect.Map || !isContainer(v.Type().Elem()) ||
+			derefType(v.Type().Elem()).Kind() != reflect.Struct {
+			return
+		}
+
+		keys, items := make([]string, 0, v.Len()), make(map[string]reflect.Value, v.Len())
+		for key, item := range v.Seq2() {
+			name := fmt.Sprint(key.Interface())
+			keys, items[name] = append(keys, name), item
+		}
+
+		if v.Kind() == reflect.Map {
+			slices.Sort(keys) // a stable order of errors
+		}
+
+		for _, key := range keys {
+			item := items[key]
+
+			switch {
+			case item.Kind() == reflect.Pointer && (item.IsNil() || slices.Contains(way, visitOf(item))):
+				continue
+			case item.Kind() == reflect.Struct && item.CanAddr():
+				item = item.Addr()
+			case item.Kind() == reflect.Struct:
+				copied := reflect.New(item.Type())
+				copied.Elem().Set(item)
+				item = copied
+			}
+
+			if !yield(key, item) {
+				return
+			}
+		}
+	}
 }
 
 // validate calls Validate of every struct in v that implements LoaderValidator, nested
@@ -120,13 +167,19 @@ func validateFields(v reflect.Value, path string, way []visit) []error {
 			value = value.Elem()
 		}
 
-		if value.Kind() != reflect.Struct {
-			continue
-		}
-
 		name := path
 		if !field.Anonymous { // embedded fields are promoted: no segment in the path
 			name = strings.TrimPrefix(path+"."+field.Name, ".")
+		}
+
+		if value.Kind() != reflect.Struct {
+			if value.CanInterface() {
+				for key, item := range structElements(value, way) {
+					errs = append(errs, validateElement(item, name+"["+key+"]", way)...)
+				}
+			}
+
+			continue
 		}
 
 		errs = append(errs, validateFields(value, name, way)...)
@@ -143,6 +196,19 @@ func validateFields(v reflect.Value, path string, way []visit) []error {
 			if err := validator.Validate(); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", name, err))
 			}
+		}
+	}
+
+	return errs
+}
+
+// validateElement validates a struct in a list or a map, item a pointer to it.
+func validateElement(item reflect.Value, name string, way []visit) []error {
+	errs := validateFields(item.Elem(), name, way)
+
+	if validator, ok := item.Interface().(LoaderValidator); ok {
+		if err := validator.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
 	}
 

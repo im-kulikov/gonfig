@@ -2,6 +2,7 @@ package gonfig
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -92,4 +93,53 @@ func TestValidate_RootErrorUnchanged(t *testing.T) {
 	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{"SERVER_PORT=1"} }))
 	require.ErrorIs(t, err, errRoot)
 	assert.Equal(t, "Server: privileged port\nroot", err.Error(), "nested structs first, the root last")
+}
+
+type validItem struct {
+	Host string `yaml:"host" required:"true"`
+	Port int    `yaml:"port"`
+}
+
+func (i validItem) Validate() error {
+	if i.Port > 65535 {
+		return errors.New("port out of range")
+	}
+
+	return nil
+}
+
+func TestValidate_ListsAndMaps(t *testing.T) {
+	var config struct {
+		Items  []validItem          `yaml:"items"`
+		Ptrs   []*validItem         `yaml:"ptrs"`
+		ByName map[string]validItem `yaml:"by_name"`
+	}
+
+	err := loadFile(t, ParserYAML, "items: [{host: a}, {port: 1}]\nptrs: [{host: b, port: 70000}]\n"+
+		"by_name: {x: {port: 2}, y: {host: c, port: 99999}}", &config)
+	require.NoError(t, err)
+
+	err = ValidateRequiredFields(&config)
+	require.ErrorIs(t, err, ErrMissingFields)
+	assert.Contains(t, err.Error(), "`Items[1].Host`")
+	assert.Contains(t, err.Error(), "`ByName[x].Host`")
+
+	err = validate(&config)
+	require.Error(t, err)
+	assert.Equal(t, "Ptrs[0]: port out of range\nByName[y]: port out of range", err.Error())
+
+	for range structElements(reflect.ValueOf(config.Items), nil) {
+		break // an iterator stops when asked
+	}
+
+	config.Ptrs = append(config.Ptrs, nil) // a nil item is skipped
+	loop := &validTree{Name: "root"}
+	loop.Children = []*validTree{{Children: []*validTree{loop}}}
+	require.NoError(t, validate(loop), "a child pointing back to the root is a cycle, not followed")
+	require.ErrorContains(t, ValidateRequiredFields(loop), "`Children[0].Name`")
+}
+
+type validTree struct {
+	Name     string `required:"true"`
+	Children []*validTree
 }
