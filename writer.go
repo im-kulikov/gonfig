@@ -64,8 +64,8 @@ var writers = map[Format]writer{
 // output gives the same values back. It follows the rules of the loader: keys
 // come from the format's struct tag (the field name without it), embedded
 // structs and fields tagged `,inline` (`,squash` for env) are inlined, nil
-// pointers are left out, durations, IP networks and encoding.TextMarshaler
-// values are written as text. Fields are written in the order they are declared.
+// pointers are left out, durations, IP networks and values of types with both
+// MarshalText and UnmarshalText are written as text. Fields are written in the order they are declared.
 //
 // A value the format cannot hold is an error: in FormatEnv a line break in a value
 // (ErrEnvValue). A value whose MarshalText fails is left out.
@@ -441,11 +441,13 @@ var (
 )
 
 // isTextValue reports whether values of t are written as text: the loader reads
-// them from a string with the shared hooks. A pointer or an interface is not: the
-// value it holds is written.
+// them from a string with the shared hooks, so t needs UnmarshalText as well as
+// MarshalText. A pointer or an interface is not: the value it holds is written.
 func isTextValue(t reflect.Type) bool {
+	ptr := reflect.PointerTo(t) // has the methods of t too
+
 	return t.Kind() != reflect.Pointer && t.Kind() != reflect.Interface &&
-		(t == durationType || t == ipNetType || t.Implements(marshalType) || reflect.PointerTo(t).Implements(marshalType))
+		(t == durationType || t == ipNetType || ptr.Implements(marshalType) && ptr.Implements(unmarshalType))
 }
 
 // textOf returns the text of a value; an empty IP network is left out, as the
