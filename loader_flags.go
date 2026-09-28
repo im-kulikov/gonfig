@@ -62,7 +62,8 @@ type PrintConfigMarker interface {
 // loader writes the loaded configuration with Write (secrets left empty) and exits
 // with code 0, like --help. It runs before required fields are checked, so it also
 // prints a template of the configuration. Without a value the format is the one of
-// the file loader, or YAML without one.
+// the file loader, or YAML without one; an empty value (--print-config=) is an
+// error, as an unknown format is.
 type PrintConfigFlag struct{}
 
 // IsPrintConfig is a marker method that satisfies the PrintConfigMarker interface.
@@ -82,7 +83,8 @@ func newFlagsLoader(l *loader) *parserFunc {
 			return err
 		}
 
-		if containsMarker(val, printMarkerType) {
+		printable := containsMarker(val, printMarkerType)
+		if printable {
 			if set.Lookup(printConfigFlag) != nil {
 				return fmt.Errorf("(flags) %w: --%s, by PrintConfigFlag and a field", ErrFlagRedefined, printConfigFlag)
 			}
@@ -96,6 +98,10 @@ func newFlagsLoader(l *loader) *parserFunc {
 
 		if err := set.Parse(l.Args); err != nil {
 			return hideSecret(err)
+		}
+
+		if printable && set.Changed(printConfigFlag) && l.printConfig == "" { // --print-config=
+			return fmt.Errorf("(flags) --%s: %w \"\"", printConfigFlag, ErrUnknownFormat)
 		}
 
 		return setPositionalArgs(val, set.Args())

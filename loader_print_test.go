@@ -81,11 +81,13 @@ required: ""
 }
 
 func TestPrintConfig_Errors(t *testing.T) {
-	var v printSettings
-	err := Load(&v, WithConfig(func(c *Config) {
-		c.Args, c.Envs = []string{"--print-config=xml"}, []string{}
-	}))
-	require.ErrorIs(t, err, ErrUnknownFormat)
+	for _, arg := range []string{"--print-config=xml", "--print-config="} {
+		var v printSettings
+		err := Load(&v, WithConfig(func(c *Config) {
+			c.Args, c.Envs = []string{arg}, []string{}
+		}))
+		require.ErrorIs(t, err, ErrUnknownFormat, arg)
+	}
 
 	var conflict struct {
 		PrintConfigFlag
