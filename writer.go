@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,7 +49,7 @@ func WithEnvPrefix(prefix string) WriteOption {
 type writer struct {
 	tag    string // struct tag with the key names
 	inline string // tag option that inlines a named struct field
-	print  func(buf *bytes.Buffer, nodes []*node, prefix string)
+	print  func(buf *bytes.Buffer, nodes []*node, prefix string) error
 }
 
 var writers = map[Format]writer{
@@ -64,6 +65,9 @@ var writers = map[Format]writer{
 // structs and fields tagged `,inline` (`,squash` for env) are inlined, nil
 // pointers are left out, durations, IP networks and encoding.TextMarshaler
 // values are written as text. Fields are written in the order they are declared.
+//
+// A value the format cannot hold is an error: in FormatEnv a line break in a value
+// (ErrEnvValue). A value whose MarshalText fails is left out.
 //
 // Values of `secret:"true"` fields are left empty. YAML, TOML and env output
 // have a comment above every value with its `usage`, environment variable and
@@ -90,7 +94,9 @@ func Write(w io.Writer, v any, format Format, options ...WriteOption) error {
 	walk := walker{tag: out.tag, inline: out.inline}
 
 	var buf bytes.Buffer
-	out.print(&buf, walk.fields(root.Elem(), envName{ok: true}, false), opts.envPrefix)
+	if err := out.print(&buf, walk.fields(root.Elem(), envName{ok: true}, false), opts.envPrefix); err != nil {
+		return err
+	}
 
 	_, err := w.Write(buf.Bytes())
 
@@ -107,6 +113,7 @@ type node struct {
 	value    any     // string, bool, int64, uint64, float64, []any or []*node
 	children []*node // fields of a section
 	section  bool
+	entry    bool // an entry of a map: key is data, not a tag
 }
 
 // comment describes a value: `usage (env: NAME, default: x)`.
@@ -181,6 +188,8 @@ type walker struct {
 func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 	var out []*node
 
+	own := make(map[*node]bool) // the nodes of fields of v, not of inlined ones
+
 	for field, value := range v.Fields() {
 		key, inline, skip := w.key(field)
 		if skip {
@@ -200,11 +209,33 @@ func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 		}
 
 		if w.fill(n, value, env.field(field)) {
-			out = append(out, n)
+			out, own[n] = append(out, n), true
 		}
 	}
 
-	return out
+	return unshadowed(out, own)
+}
+
+// unshadowed leaves out a node of an inlined field whose key a field of the struct
+// itself, or an earlier inlined field, already has: in Go the field of an embedded
+// struct is shadowed by one of the same name, and keys match case-insensitively.
+func unshadowed(nodes []*node, own map[*node]bool) []*node {
+	keys := make(map[string]bool, len(nodes))
+	for n := range own {
+		keys[strings.ToLower(n.key)] = true
+	}
+
+	return slices.DeleteFunc(nodes, func(n *node) bool {
+		key := strings.ToLower(n.key)
+		if own[n] {
+			return false
+		}
+
+		shadowed := keys[key]
+		keys[key] = true
+
+		return shadowed
+	})
 }
 
 // inlined returns the nodes of an inlined field: the fields of a struct or of the
@@ -285,7 +316,7 @@ func (w walker) entries(v reflect.Value, env envName, secret bool) []*node {
 
 	for key, value := range v.Seq2() {
 		name := fmt.Sprint(key.Interface())
-		n := &node{key: name, secret: secret}
+		n := &node{key: name, secret: secret, entry: true}
 
 		if w.fill(n, value, env.key(name)) {
 			out = append(out, n)
@@ -322,9 +353,13 @@ func (w walker) value(v reflect.Value) (any, bool) {
 		}
 
 		return w.value(v.Elem())
+	case reflect.Complex64, reflect.Complex128:
+		return strconv.FormatComplex(v.Complex(), 'g', -1, v.Type().Bits()), true
 	case reflect.Struct:
 		return w.fields(v, envName{}, false), true
-	default: // complex numbers, maps inside lists, funcs, channels: not a config value
+	case reflect.Map: // inside a list
+		return w.entries(v, envName{}, false), true
+	default: // funcs, channels: not a config value
 		return nil, false
 	}
 }

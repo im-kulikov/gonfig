@@ -14,14 +14,15 @@ import (
 )
 
 // The printers get a tree of plain values (see node.value) and write into a
-// bytes.Buffer, so they cannot fail.
+// bytes.Buffer; only env, a line per value, cannot hold every value.
 
-func printYAML(buf *bytes.Buffer, nodes []*node, prefix string) {
+func printYAML(buf *bytes.Buffer, nodes []*node, prefix string) error {
 	enc := yaml.NewEncoder(buf)
 	enc.SetIndent(2)
 
 	_ = enc.Encode(yamlMapping(nodes, prefix)) // a tree of plain values always encodes
-	_ = enc.Close()
+
+	return enc.Close()
 }
 
 func yamlMapping(nodes []*node, prefix string) *yaml.Node {
@@ -33,7 +34,12 @@ func yamlMapping(nodes []*node, prefix string) *yaml.Node {
 			value = n.children
 		}
 
-		key := &yaml.Node{Kind: yaml.ScalarNode, Value: n.key, HeadComment: n.comment(true, prefix)}
+		// !!str quotes a key that would read as another type (404, true, null); yaml.v3 leaves << bare, a merge
+		key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: n.key, HeadComment: n.comment(true, prefix)}
+		if n.key == "<<" {
+			key.Style = yaml.DoubleQuotedStyle
+		}
+
 		mapping.Content = append(mapping.Content, key, yamlValue(value, prefix))
 	}
 
@@ -63,12 +69,13 @@ func yamlValue(value any, prefix string) *yaml.Node {
 	}
 }
 
-func printJSON(buf *bytes.Buffer, nodes []*node, _ string) {
+func printJSON(buf *bytes.Buffer, nodes []*node, _ string) error {
 	var compact bytes.Buffer
 	jsonValue(&compact, nodes)
 
 	_ = json.Indent(buf, compact.Bytes(), "", "  ") // jsonValue writes valid JSON
-	buf.WriteByte('\n')
+
+	return buf.WriteByte('\n')
 }
 
 // jsonValue writes objects field by field, in their order: a map would sort them.
@@ -121,8 +128,10 @@ func jsonValue(buf *bytes.Buffer, value any) {
 }
 
 // printTOML writes the values of a table before its sub-tables, as TOML requires.
-func printTOML(buf *bytes.Buffer, nodes []*node, prefix string) {
+func printTOML(buf *bytes.Buffer, nodes []*node, prefix string) error {
 	tomlTable(buf, nodes, nil, prefix)
+
+	return nil
 }
 
 func tomlTable(buf *bytes.Buffer, nodes []*node, path []string, prefix string) {
@@ -178,11 +187,17 @@ func tomlValue(value any) string {
 		}
 
 		return strconv.FormatFloat(v, 'g', -1, 64)
-	default: // strings, bools and integers are written in TOML as in JSON
+	case uint64:
+		if v > math.MaxInt64 { // beyond TOML integers: a string, the loader parses it
+			return tomlValue(strconv.FormatUint(v, 10))
+		}
+
+		return strconv.FormatUint(v, 10)
+	default: // strings, bools and integers are written in TOML as in JSON, but DEL is escaped too
 		var buf bytes.Buffer
 		jsonValue(&buf, v)
 
-		return buf.String()
+		return strings.ReplaceAll(buf.String(), "\x7f", `\u007f`)
 	}
 }
 
@@ -196,20 +211,53 @@ func tomlKey(key string) string {
 	return tomlValue(key)
 }
 
+// ErrEnvValue is returned by Write in FormatEnv for a value that a line NAME=value
+// cannot hold, so that it would not read back: a line break in a value or a map key,
+// "=" or an empty map key, a comma in a list item. Other formats can write it.
+const ErrEnvValue Error = "cannot be written as an environment variable"
+
 // printEnv writes NAME=value for every value env can set, sections flattened.
-func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) {
+func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) error {
 	for _, n := range nodes {
 		if n.section {
-			printEnv(buf, n.children, prefix)
+			if err := printEnv(buf, n.children, prefix); err != nil {
+				return err
+			}
 
 			continue
 		}
 
-		if value, ok := envValue(n.value); ok && n.env != "" {
-			writeComment(buf, n.comment(false, prefix))
-			fmt.Fprintf(buf, "%s=%s\n", prefixed(prefix, n.env), value)
+		value, ok := envValue(n.value)
+		if !ok || n.env == "" {
+			continue
 		}
+
+		name := prefixed(prefix, n.env)
+		if reason := envProblem(n, value); reason != "" {
+			return fmt.Errorf("%q %w: %s", name, ErrEnvValue, reason)
+		}
+
+		writeComment(buf, n.comment(false, prefix))
+		fmt.Fprintf(buf, "%s=%s\n", name, value)
 	}
+
+	return nil
+}
+
+// envProblem tells why a value cannot be written as a line NAME=value, if it cannot.
+func envProblem(n *node, value string) string {
+	items, _ := n.value.([]any)
+
+	switch {
+	case strings.ContainsAny(n.env, "\n\r=") || n.entry && n.key == "":
+		return `a map key is empty or has a line break or "="`
+	case strings.ContainsAny(value, "\n\r\x00"):
+		return "the value has a line break"
+	case slices.ContainsFunc(items, func(item any) bool { text, _ := envValue(item); return strings.Contains(text, ",") }):
+		return "a list item has a comma"
+	}
+
+	return ""
 }
 
 // envValue formats a value as the env loader reads it: lists are comma-separated,
@@ -236,8 +284,10 @@ func envValue(value any) (string, bool) {
 	}
 }
 
+// writeComment writes a comment line by line: a line break in a usage tag or a
+// map key must not end the comment.
 func writeComment(buf *bytes.Buffer, comment string) {
-	if comment != "" {
-		fmt.Fprintf(buf, "# %s\n", comment)
+	for line := range strings.Lines(comment) {
+		fmt.Fprintf(buf, "# %s\n", strings.TrimRight(line, "\r\n"))
 	}
 }
