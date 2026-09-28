@@ -287,12 +287,18 @@ func TestWrite_EnvCannotHold(t *testing.T) {
 		"a line break": &struct {
 			Cert string `env:"CERT"`
 		}{Cert: "-----BEGIN\nAPP_ADMIN=true"},
+		"a NUL byte": &struct {
+			Token string `env:"TOKEN"`
+		}{Token: "a\x00b"},
 		"a comma": &struct {
 			Args []string `env:"ARGS"`
 		}{Args: []string{"--opt=a,b"}},
 		"= in a map key": &struct {
 			Labels map[string]string `env:"LABELS"`
 		}{Labels: map[string]string{"a=b": "c"}},
+		"NUL in a map key": &struct {
+			Labels map[string]string `env:"LABELS"`
+		}{Labels: map[string]string{"a\x00b": "c"}},
 		"_ in a key of a map of structs": &struct {
 			Servers map[string]rtInner `env:"SERVERS"`
 		}{Servers: map[string]rtInner{"team_name": {Name: "x"}}},
