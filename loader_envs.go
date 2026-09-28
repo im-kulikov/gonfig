@@ -453,14 +453,10 @@ func textStruct(t reflect.Type) bool {
 //
 //nolint:ireturn
 func decodeHooks() mapstructure.DecodeHookFunc {
-	decoders := mapstructure.ComposeDecodeHookFunc(
-		mapstructure.StringToTimeDurationHookFunc(),
-		mapstructure.StringToBasicTypeHookFunc())
-
 	return mapstructure.ComposeDecodeHookFunc(
 		jsonNumberHook,
 		mapstructure.TextUnmarshallerHookFunc(),
-		mapstructure.StringToSliceHookFunc(","),
+		splitListHook,
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToBasicTypeHookFunc(),
 
@@ -468,48 +464,36 @@ func decodeHooks() mapstructure.DecodeHookFunc {
 		mapstructure.StringToIPHookFunc(),
 		mapstructure.StringToIPNetHookFunc(),
 
-		// slice types
-		func(
-			f reflect.Value,
-			t reflect.Value,
-		) (any, error) {
-			if f.Kind() != reflect.String {
-				return f.Interface(), nil
-			}
-			if t.Kind() != reflect.Slice {
-				return f.Interface(), nil
-			}
-
-			var str string
-			if in, ok := f.Interface().(string); ok {
-				str = in
-			} else {
-				str = f.String()
-			}
-
-			if str == "" {
-				return nil, nil
-			}
-
-			raw := strings.Split(str, ",")
-			tmp := reflect.MakeSlice(t.Type(), len(raw), len(raw))
-			for i := range raw {
-				from := reflect.ValueOf(raw[i])
-				to := reflect.New(t.Type().Elem()).Elem()
-
-				val, err := mapstructure.DecodeHookExec(
-					decoders, from, to)
-
-				if err != nil {
-					return nil, err
-				}
-
-				tmp.Index(i).Set(reflect.ValueOf(val).Convert(t.Type().Elem()))
-			}
-
-			return tmp.Interface(), nil
-		})
+		replaceListHook)
 }
+
+// splitListHook reads a list or an array from a comma-separated string ("a,b" from env):
+// mapstructure then decodes each item into the element type with these same hooks.
+func splitListHook(from, to reflect.Value) (any, error) {
+	if from.Kind() != reflect.String || !isList(to.Kind()) {
+		return from.Interface(), nil
+	}
+
+	if from.String() == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(from.String(), ","), nil
+}
+
+// replaceListHook empties a list or an array before a source writes it, so the source
+// replaces it, as a file did with yaml.v3: mapstructure would keep the old items past
+// the new ones, write into the backing array of the caller, and skip the length check
+// of an array that is not empty.
+func replaceListHook(from, to reflect.Value) (any, error) {
+	if isList(to.Kind()) && isList(from.Kind()) && to.CanSet() {
+		to.Set(reflect.Zero(to.Type()))
+	}
+
+	return from.Interface(), nil
+}
+
+func isList(kind reflect.Kind) bool { return kind == reflect.Slice || kind == reflect.Array }
 
 // Tag options that inline a named struct field into its parent: `env:",squash"`
 // for environment variables, `yaml:",inline"` (and json/toml alike) for files.

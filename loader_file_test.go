@@ -426,3 +426,27 @@ func TestFromFS(t *testing.T) {
 	_, err = load("configs/missing.yaml")
 	require.ErrorIs(t, err, ErrCantOpen)
 }
+
+func TestFileLoader_ListsReplace(t *testing.T) {
+	type server struct {
+		Host string `yaml:"host"`
+		Port int    `yaml:"port"`
+	}
+
+	var config struct {
+		Servers []server `yaml:"servers"`
+		Tags    []string `yaml:"tags"`
+		Pair    [2]int   `yaml:"pair"`
+	}
+
+	tags := []string{"a", "b"}
+	config.Servers, config.Tags, config.Pair = []server{{"a", 1}, {"c", 2}}, tags, [2]int{1, 2}
+
+	require.NoError(t, loadFile(t, ParserYAML, "servers: [{host: b}]\ntags: [x]\npair: [7]\n", &config))
+	assert.Equal(t, []server{{Host: "b"}}, config.Servers, "the file replaces a list, not item by item")
+	assert.Equal(t, []string{"x"}, config.Tags)
+	assert.Equal(t, []string{"a", "b"}, tags, "the list of the caller is not written")
+	assert.Equal(t, [2]int{7, 0}, config.Pair)
+
+	require.ErrorContains(t, loadFile(t, ParserYAML, "pair: [1, 2, 3]\n", &config), "length less or equal to 2")
+}
