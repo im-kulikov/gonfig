@@ -327,3 +327,23 @@ func TestWrite_Shadowed(t *testing.T) {
 		})
 	}
 }
+
+func TestWrite_ShadowedByNil(t *testing.T) {
+	type config struct {
+		shadowBase
+
+		Name *string `yaml:"name" json:"name" toml:"name"` // nil: still shadows shadowBase.Name
+	}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &config{shadowBase: shadowBase{Name: "base", Port: 1}}, format)
+			assert.NotContains(t, output, "base", "a nil field keeps its key: the value would read into it")
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Nil(t, got.Name)
+			assert.Equal(t, 1, got.Port)
+		})
+	}
+}
