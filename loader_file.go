@@ -345,7 +345,8 @@ const noTagSquash = "\x00"
 
 // inlineHook inlines the fields tagged `,inline` of a struct, as yaml.v3 does, by
 // moving their keys under the field name before the struct is decoded: a struct, or a
-// pointer to one, takes the keys of its fields; a map takes the keys no other field has.
+// pointer to one, takes the keys of its fields that no field of the struct itself has
+// (in Go the outer field shadows the inner one); a map takes the keys no field has.
 // Without any of its keys a pointer stays nil.
 func inlineHook(tag string) mapstructure.DecodeHookFuncType {
 	return func(_, to reflect.Type, data any) (any, error) {
@@ -356,20 +357,26 @@ func inlineHook(tag string) mapstructure.DecodeHookFuncType {
 
 		var inlined []reflect.StructField
 
-		taken := inlineKeys(to, tag, &inlined)
+		direct := inlineKeys(to, tag, &inlined)
 		if len(inlined) == 0 {
 			return data, nil
+		}
+
+		owns, taken := make([][]string, len(inlined)), slices.Clone(direct)
+		for i, field := range inlined {
+			owns[i] = inlineKeys(derefType(field.Type), tag, nil)
+			taken = append(taken, owns[i]...)
 		}
 
 		tree = maps.Clone(tree)
 		fields := make(map[string]any, len(inlined))
 
-		for _, field := range inlined {
+		for i, field := range inlined {
 			moved := make(map[string]any)
 
-			own := inlineKeys(derefType(field.Type), tag, nil)
 			for key, value := range tree {
-				if field.Type.Kind() == reflect.Map && !matchesKey(taken, key) || matchesKey(own, key) {
+				isMap := field.Type.Kind() == reflect.Map
+				if isMap && !matchesKey(taken, key) || !isMap && matchesKey(owns[i], key) && !matchesKey(direct, key) {
 					moved[key] = value
 					delete(tree, key)
 				}
@@ -387,11 +394,14 @@ func inlineHook(tag string) mapstructure.DecodeHookFuncType {
 }
 
 // inlineKeys returns the keys of the fields of a struct t, with the keys of its inlined
-// structs, and adds its fields tagged `,inline` to inlined.
-func inlineKeys(t reflect.Type, tag string, inlined *[]reflect.StructField) []string {
-	if t.Kind() != reflect.Struct {
+// structs; given inlined, it adds the fields tagged `,inline` to it instead, their keys
+// left to the caller.
+func inlineKeys(t reflect.Type, tag string, inlined *[]reflect.StructField, way ...reflect.Type) []string {
+	if t.Kind() != reflect.Struct || slices.Contains(way, t) { // a struct may embed a pointer to itself
 		return nil
 	}
+
+	way = append(slices.Clip(way), t)
 
 	var keys []string
 
@@ -403,13 +413,13 @@ func inlineKeys(t reflect.Type, tag string, inlined *[]reflect.StructField) []st
 		switch {
 		case parts[0] == "-" || !field.IsExported() && !field.Anonymous:
 		case field.Anonymous && isStruct: // inlined by mapstructure
-			keys = append(keys, inlineKeys(elem, tag, inlined)...)
+			keys = append(keys, inlineKeys(elem, tag, inlined, way...)...)
 		case slices.Contains(parts[1:], fileInlineOption) && (isStruct || field.Type.Kind() == reflect.Map):
 			if inlined != nil {
 				*inlined = append(*inlined, field)
+			} else {
+				keys = append(keys, inlineKeys(elem, tag, nil, way...)...)
 			}
-
-			keys = append(keys, inlineKeys(elem, tag, nil)...)
 		case parts[0] == "":
 			keys = append(keys, field.Name)
 		default:

@@ -264,36 +264,26 @@ func containsDefaultConfigFlag(val any) bool {
 // containsMarker checks if the provided value or any of its embedded fields implement
 // the marker interface, recursing through nested and pointer embeddings.
 func containsMarker(val any, marker reflect.Type) bool {
-	if val != nil && reflect.TypeOf(val).Implements(marker) {
+	t := reflect.TypeOf(val)
+
+	return t != nil && hasMarker(t, marker, nil)
+}
+
+// hasMarker checks t and its embedded fields; way holds the structs it is in, as a
+// struct may embed a pointer to itself.
+func hasMarker(t, marker reflect.Type, way []reflect.Type) bool {
+	if t.Implements(marker) || reflect.PointerTo(t).Implements(marker) {
 		return true
 	}
 
-	t := reflect.TypeOf(val)
-	if t == nil {
-		return false
-	}
-
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	if t.Kind() != reflect.Struct {
+	if t = derefType(t); t.Kind() != reflect.Struct || slices.Contains(way, t) {
 		return false
 	}
 
 	for f := range t.Fields() {
-		if f.Type.Implements(marker) || reflect.PointerTo(f.Type).Implements(marker) {
+		if f.Type.Implements(marker) || reflect.PointerTo(f.Type).Implements(marker) ||
+			f.Anonymous && hasMarker(f.Type, marker, append(slices.Clip(way), t)) {
 			return true
-		}
-
-		if f.Anonymous {
-			ft := f.Type
-			for ft.Kind() == reflect.Pointer {
-				ft = ft.Elem()
-			}
-			if ft.Kind() == reflect.Struct && containsMarker(reflect.New(ft).Interface(), marker) {
-				return true
-			}
 		}
 	}
 

@@ -553,6 +553,14 @@ func TestFileLoader_InlineMap(t *testing.T) {
 	assert.Nil(t, config.TLS, "a pointer without any of its keys stays nil")
 	assert.NotContains(t, write(t, &config, FormatYAML), "cert", "a nil pointer is left out")
 
+	var shadowed struct {
+		Host   string       `yaml:"host"`
+		Server inlineServer `yaml:",inline"`
+	}
+	require.NoError(t, loadFile(t, ParserYAML, "host: h", &shadowed))
+	assert.Equal(t, "h", shadowed.Host, "a field of the struct itself shadows one of an inlined struct, as in Go")
+	assert.Empty(t, shadowed.Server.Host)
+
 	secret := struct {
 		Extra map[string]string `yaml:",inline" secret:"true"`
 	}{Extra: map[string]string{"token": "x"}}

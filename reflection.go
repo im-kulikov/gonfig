@@ -246,7 +246,7 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 				}
 
 				child := &ReflectValue{Value: fv, Field: elem.Value.Type().Field(i), Owner: elem}
-				if options.section(fv) {
+				if options.section(fv) && !elem.holds(fv) { // a pointer back to an owner is a field: a cycle
 					child.Value = fv.Elem()
 				}
 
@@ -270,6 +270,27 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 		walk(&ReflectValue{Value: v.Elem()})
 	}
 }
+
+// holds reports whether the pointer p points to v or to one of its owners.
+func (v *ReflectValue) holds(p reflect.Value) bool {
+	for ; v != nil; v = v.Owner {
+		if v.Value.CanAddr() && (visit{v.Value.Addr().Pointer(), v.Value.Type()}) == visitOf(p) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// visit is a struct on the way of a walk: its address and type, as an embedded struct
+// shares the address of its parent.
+type visit struct {
+	at uintptr
+	t  reflect.Type
+}
+
+// visitOf is the struct a non-nil pointer p points to.
+func visitOf(p reflect.Value) visit { return visit{p.Pointer(), p.Type().Elem()} }
 
 // section reports whether v is a non-nil pointer to a struct the walk goes into.
 func (o *ReflectOptions) section(v reflect.Value) bool {
