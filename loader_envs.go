@@ -538,6 +538,11 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 		conf.DecodeHook = mapstructure.ComposeDecodeHookFunc(envClashHook, conf.DecodeHook)
 	}
 
+	if options.inline == fileInlineOption { // mapstructure cannot inline a map: inlineHook inlines
+		conf.SquashTagOption = noTagSquash
+		conf.DecodeHook = mapstructure.ComposeDecodeHookFunc(inlineHook(options.tag), conf.DecodeHook)
+	}
+
 	dec, err := mapstructure.NewDecoder(conf)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrPrepareDecoder, err)
