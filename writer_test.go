@@ -323,6 +323,23 @@ type shadowBase struct {
 	Port int    `yaml:"port" json:"port" toml:"port"`
 }
 
+func TestWrite_EmbeddedTextStruct(t *testing.T) {
+	type wrap struct {
+		net.IPNet // read from text, not inlined: env cannot set it without a tag
+
+		Name string `env:"NAME"`
+	}
+
+	_, network, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	v := struct {
+		Net wrap `env:"NET"`
+	}{Net: wrap{IPNet: *network, Name: "x"}}
+
+	assert.Equal(t, "APP_NET_NAME=x\n", write(t, &v, FormatEnv), "no APP_NET=10.0.0.0/8 the loader would not read")
+}
+
 func TestWrite_TextMapKeys(t *testing.T) {
 	type config struct {
 		Times map[time.Time]string `yaml:"times" json:"times" toml:"times" env:"TIMES"`
