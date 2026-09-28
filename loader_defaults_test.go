@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"os"
 	"reflect"
 	"strconv"
 	"testing"
@@ -329,4 +330,23 @@ func TestSetDefaults_Unexported(t *testing.T) {
 	require.Equal(t, 80, config.Port)
 	require.Empty(t, config.host, "no source sets an unexported field")
 	require.Empty(t, config.nested.Name)
+}
+
+func TestSetDefaults_NumberPrefixes(t *testing.T) {
+	var config struct {
+		Mode  os.FileMode `default:"0644"`
+		Flags uint8       `default:"0b101"`
+		Hex   int         `default:"0x10"`
+		Octal int         `default:"0o17"`
+		Big   int64       `default:"1_000_000"`
+		Ten   int         `default:"10"`
+	}
+
+	require.NoError(t, SetDefaults(&config))
+	require.Equal(t, os.FileMode(0o644), config.Mode, "as env and flags read 0644")
+	require.Equal(t, uint8(5), config.Flags)
+	require.Equal(t, 16, config.Hex)
+	require.Equal(t, 15, config.Octal)
+	require.Equal(t, int64(1_000_000), config.Big)
+	require.Equal(t, 10, config.Ten)
 }

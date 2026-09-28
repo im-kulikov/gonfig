@@ -200,7 +200,8 @@ arguments leaves the pattern as a positional argument. `Args: nil` means `os.Arg
 
 ## Defaults
 
-The `default` tag fills a field that no source has set: numbers, strings, booleans, `time.Duration`,
+The `default` tag fills a field that no source has set: numbers (with Go prefixes, as env and flags read them:
+`0644` is octal, `0x10`, `0b101`, `1_000`), strings, booleans, `time.Duration`,
 `net.IPNet` (`10.0.0.0/8`), `net.IPMask` (a prefix, `/24`: IPv4 up to 32, IPv6 up to 128), any
 `encoding.TextUnmarshaler`, pointers to these, and lists (`1s,2m`) and maps (`read:1s,write:2s`) of them.
 The first `:` splits a map entry, so a value may contain it: `api:http://localhost:8080`. List items and
