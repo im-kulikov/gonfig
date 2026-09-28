@@ -66,6 +66,8 @@ type roundTrip struct {
 	Complex  complex128        `yaml:"complex"  json:"complex"  toml:"complex"  env:"COMPLEX"`
 	Routes   map[string]string `yaml:"routes"   json:"routes"   toml:"routes"   env:"ROUTES"`
 
+	Servers map[string]rtInner `yaml:"servers"  json:"servers"  toml:"servers"  env:"SERVERS"`
+
 	Hooks []map[string]string `yaml:"hooks" json:"hooks" toml:"hooks" env:"-"` // env cannot hold maps in a list
 }
 
@@ -91,7 +93,7 @@ func newRoundTrip(t *testing.T) roundTrip {
 		Strings:    []string{"a", "b c"},
 		Ints:       []int{1, 2},
 		Waits:      []time.Duration{time.Second, time.Minute},
-		Labels:     map[string]string{"team": "core", "tier": "1"},
+		Labels:     map[string]string{"team": "core", "tier": "1", "team_name": "x"},
 		Counts:     map[string]int{"a": 1, "b": 2},
 		Nested:     rtInner{Name: "nested", Wait: time.Hour},
 		Pointer:    &rtInner{Name: "pointer", Wait: time.Millisecond},
@@ -104,6 +106,7 @@ func newRoundTrip(t *testing.T) roundTrip {
 		Seed:       math.MaxUint64,
 		Complex:    complex(1.5, -2),
 		Routes:     map[string]string{"404": "a", "true": "b", "null": "c", "<<": "d", "1.10": "e"},
+		Servers:    map[string]rtInner{"main": {Name: "m", Wait: time.Second}, "replica": {Name: "r"}},
 		Hooks:      []map[string]string{{"url": "http://x"}, {"url": "http://y", "404": "z"}},
 	}
 }

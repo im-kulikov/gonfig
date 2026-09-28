@@ -26,17 +26,18 @@ type LoaderValidator interface {
 
 // ParserConfigSetter defines an interface for setting the configuration file path.
 // Implementing types are expected to provide a method to set the path where
-// the configuration file for the parser is located.
+// the configuration file for the parser is located. The path is set before every
+// Load: for concurrent loads the parser is made by WithCustomParserInit.
 type ParserConfigSetter interface {
 	// SetConfigPath sets the path to the configuration file.
 	// The path parameter is expected to be a valid file path as a string.
 	SetConfigPath(path string)
 }
 
-// strictSetter is implemented by the file loaders: the loader passes Config.Strict
-// to them right before loading, as it does with the config path.
-type strictSetter interface {
-	setStrict(strict bool)
+// configSetter is implemented by the file loaders: the loader passes its Config
+// (Strict, SkipDefaults) to them right before loading, as it does with the config path.
+type configSetter interface {
+	setConfig(c Config)
 }
 
 // parserFunc is a concrete implementation of the Parser interface.

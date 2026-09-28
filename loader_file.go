@@ -49,7 +49,7 @@ type fileLoader struct {
 	Parser
 
 	path   *atomic.Pointer[string]
-	strict *atomic.Bool
+	config *atomic.Pointer[Config]
 }
 
 type fileOpener func(string) (io.ReadCloser, error)
@@ -117,12 +117,12 @@ func initFileLoader(kind ParserType, options []FileOption) func(_ Config) (Parse
 	return func(_ Config) (Parser, error) {
 		var (
 			path   atomic.Pointer[string]
-			strict atomic.Bool
+			config atomic.Pointer[Config]
 		)
 
 		return &fileLoader{
 			path:   &path,
-			strict: &strict,
+			config: &config,
 
 			Parser: &parserFunc{
 				name: kind,
@@ -133,7 +133,7 @@ func initFileLoader(kind ParserType, options []FileOption) func(_ Config) (Parse
 					}
 
 					return loadFromFile(&path, settings.open, func(r io.Reader) error {
-						return decodeFile(format, r, v, strict.Load())
+						return decodeFile(format, r, v, config.Load())
 					})
 				},
 			},
@@ -146,8 +146,8 @@ func (y *fileLoader) SetConfigPath(filename string) {
 	y.path.Store(&filename)
 }
 
-func (y *fileLoader) setStrict(strict bool) {
-	y.strict.Store(strict)
+func (y *fileLoader) setConfig(c Config) {
+	y.config.Store(&c)
 }
 
 func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.Reader) error) (err error) {
@@ -179,7 +179,7 @@ func loadFromFile(path *atomic.Pointer[string], open fileOpener, decode func(io.
 // decodeFile reads a file into a generic map and decodes it by the same rules as
 // environment variables: embedded structs are inlined, strings are converted by
 // the shared hooks (durations, IP networks, encoding.TextUnmarshaler).
-func decodeFile(format fileFormat, r io.Reader, dest any, strict bool) error {
+func decodeFile(format fileFormat, r io.Reader, dest any, config *Config) error {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -194,7 +194,8 @@ func decodeFile(format fileFormat, r io.Reader, dest any, strict bool) error {
 		tag:      format.tag,
 		inline:   fileInlineOption,
 		untagged: true,
-		strict:   strict,
+		strict:   config != nil && config.Strict,
+		noTags:   config != nil && config.SkipDefaults,
 	})
 }
 

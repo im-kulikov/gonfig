@@ -546,7 +546,7 @@ func TestFileLoader_InlineMap(t *testing.T) {
 
 	parser := testFileLoader(t, ParserYAML)
 	parser.SetConfigPath(writeTempFile(t, "strict.yaml", "name: y\nfoo: bar"))
-	parser.setStrict(true)
+	parser.setConfig(Config{Strict: true})
 
 	config = inlineConfig{}
 	require.NoError(t, parser.Load(&config), "keys taken by an inlined map are known")

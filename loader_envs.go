@@ -74,7 +74,7 @@ const (
 // Returns a Parser that processes environment variables with the specified prefix.
 func newEnvLoader(l *loader) *parserFunc {
 	return &parserFunc{name: ParserEnv, call: func(v any) error {
-		return LoadEnvs(PrepareEnvs(l.Envs, l.EnvPrefix), v)
+		return loadEnvs(PrepareEnvs(l.Envs, l.EnvPrefix), v, l.SkipDefaults)
 	}}
 }
 
@@ -368,13 +368,45 @@ func envClashHook(_, target reflect.Type, data any) (any, error) {
 	case reflect.Struct:
 		return resolveClashes(maps.Clone(tree), target), nil
 	case reflect.Map:
-		if _, own := tree[""]; own {
-			tree = maps.Clone(tree)
-			delete(tree, "")
-		}
+		return mapEntries(tree, target.Elem()), nil
 	}
 
 	return tree, nil
+}
+
+// mapEntries picks the entries of a map from the names under its own (see
+// insertIntoMap). A map of values takes the rest of a name as the key, so a key may
+// hold "_": LABELS_team_name=core is team_name. A map of structs or maps takes the
+// first segment, the rest names a field: DBS_main_HOST=db is main, HOST=db.
+func mapEntries(tree map[string]any, elem reflect.Type) map[string]any {
+	container := isContainer(elem)
+	entries := make(map[string]any, len(tree))
+
+	for key, value := range tree {
+		nested, isTree := value.(map[string]any)
+		own, hasOwn := nested[""]
+
+		switch {
+		case key == "": // the value of the map's own name, next to its entries
+		case container && isTree:
+			entries[key] = nested
+		case container: // a joined name: its segments are in the tree of the first one
+		case !isTree:
+			entries[key] = value
+		case hasOwn: // LABELS_team next to LABELS_team_name
+			entries[key] = own
+		}
+	}
+
+	return entries
+}
+
+// isContainer reports whether env sets a value of t through the names under its own:
+// a struct (not one read from text) or a map, or a pointer to one.
+func isContainer(t reflect.Type) bool {
+	t = derefType(t)
+
+	return t.Kind() == reflect.Map || t.Kind() == reflect.Struct && !textStruct(t)
 }
 
 // resolveClashes fixes the values of the fields of t in tree, see envClashHook.
@@ -382,20 +414,17 @@ func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
 	for field := range t.Fields() {
 		parts := strings.Split(field.Tag.Get(envTag), ",")
 
-		kind := field.Type
-		for kind.Kind() == reflect.Pointer {
-			kind = kind.Elem()
-		}
-
-		container := kind.Kind() == reflect.Map || kind.Kind() == reflect.Struct && !textStruct(kind)
+		kind := derefType(field.Type)
+		container := isContainer(kind)
 
 		switch key, found := lookupKey(tree, parts[0]); {
 		case parts[0] == "" && container && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
 			resolveClashes(tree, kind) // inlined: its fields read from this level
 		case !found:
 		case container:
-			if _, isTree := tree[key].(map[string]any); !isTree {
-				delete(tree, key) // DB=x next to the struct DB
+			nested, isTree := tree[key].(map[string]any)
+			if !isTree || field.Type.Kind() == reflect.Pointer && !setsField(nested, kind) {
+				delete(tree, key) // DB=x next to the struct DB; TLS_OTHER, no field of the section TLS
 			}
 		default:
 			if nested, isTree := tree[key].(map[string]any); isTree {
@@ -408,6 +437,35 @@ func resolveClashes(tree map[string]any, t reflect.Type) map[string]any {
 	}
 
 	return tree
+}
+
+// setsField reports whether the names under the name of a struct or a map t set
+// anything in it: a section, a pointer to a struct, is created only then.
+func setsField(tree map[string]any, t reflect.Type) bool {
+	if t.Kind() == reflect.Map {
+		return len(tree) > 0
+	}
+
+	for field := range t.Fields() {
+		parts := strings.Split(field.Tag.Get(envTag), ",")
+		kind := derefType(field.Type)
+		key, found := lookupKey(tree, parts[0])
+		nested, isTree := tree[key].(map[string]any)
+		_, own := nested[""]
+
+		switch {
+		case parts[0] == "" && isContainer(kind) && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
+			if setsField(tree, kind) {
+				return true
+			}
+		case !found:
+		case isContainer(kind) && isTree && setsField(nested, kind),
+			!isContainer(kind) && (!isTree || own):
+			return true
+		}
+	}
+
+	return false
 }
 
 // lookupKey finds the key of a field as mapstructure does: exact, else case-insensitive.
@@ -515,10 +573,11 @@ type decodeOptions struct {
 	untagged bool   // match fields without the tag by their name (files); env skips them
 	strict   bool   // keys that match no field are an error (files only: env holds every variable)
 	env      bool   // resolve a name that is both a variable and the start of others (envClashHook)
+	noTags   bool   // Config.SkipDefaults: a section a source creates does not get its `default` tags
 }
 
-func decodeMapToStruct(dest any, from map[string]any, tag string) error {
-	return decodeMap(dest, from, decodeOptions{tag: tag, inline: envInlineOption})
+func decodeMapToStruct(dest any, from map[string]any, tag string, skipDefaults bool) error {
+	return decodeMap(dest, from, decodeOptions{tag: tag, inline: envInlineOption, noTags: skipDefaults})
 }
 
 // decodeMap is the single decoder behind environment variables, files and
@@ -531,7 +590,11 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 		SquashTagOption:      options.inline,
 		IgnoreUntaggedFields: !options.untagged,
 		ErrorUnused:          options.strict,
-		DecodeHook:           mapstructure.ComposeDecodeHookFunc(sectionDefaultsHook, decodeHooks()),
+		DecodeHook:           decodeHooks(),
+	}
+
+	if !options.noTags {
+		conf.DecodeHook = mapstructure.ComposeDecodeHookFunc(sectionDefaultsHook, conf.DecodeHook)
 	}
 
 	if options.env {
@@ -564,7 +627,11 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 // It uses mapstructure to map the environment variables to the fields of the destination
 // object based on the "env" tag. It returns an error if decoding fails.
 func LoadEnvs(envs map[string]any, dest any) error {
-	return decodeMap(dest, envs, decodeOptions{tag: envTag, inline: envInlineOption, env: true})
+	return loadEnvs(envs, dest, false)
+}
+
+func loadEnvs(envs map[string]any, dest any, skipDefaults bool) error {
+	return decodeMap(dest, envs, decodeOptions{tag: envTag, inline: envInlineOption, env: true, noTags: skipDefaults})
 }
 
 // jsonNumberHook turns json.Number from JSON files into a Go number before the

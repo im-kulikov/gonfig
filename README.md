@@ -114,7 +114,9 @@ type Config struct {
 
 - `Config.EnvPrefix = "APP"` (or `"APP_"`) reads `APP_DB_HOST` and ignores the rest of the environment.
 - Lists are comma-separated: `PORTS=80,443`. Map entries are variables of their own:
-  `LABELS_team=core` for `Labels map[string]string` tagged `env:"LABELS"`.
+  `LABELS_team=core` for `Labels map[string]string` tagged `env:"LABELS"`; the rest of the name is the key,
+  so `LABELS_team_name` is `team_name`. In a map of structs the next segment is the key and the rest names a
+  field: `DBS_main_HOST` for `DBs map[string]DB` tagged `env:"DBS"` (its keys cannot hold `_`).
 - Durations (`5s`), IPs, CIDR networks and every `encoding.TextUnmarshaler` (`slog.Level`, `time.Time`)
   are parsed from text.
 - Names that belong to something else are ignored: `DB=...` next to the struct `DB` (`DB_HOST`), or
@@ -229,7 +231,8 @@ type Config struct {
 ```
 
 - A section a file or the environment creates starts from its `default` tags, like the root of the
-  config: `TLS_CERT=cert.pem` gives `{Cert: cert.pem, MinVersion: TLS13}`. `tls: null` keeps it nil.
+  config (unless `SkipDefaults`): `TLS_CERT=cert.pem` gives `{Cert: cert.pem, MinVersion: TLS13}`.
+  `tls: null` keeps it nil, and so does a variable that sets none of its fields (`TLS_OTHER`).
 - In a section that is set, `required` fields are checked (`TLS.Cert`) and `Validate()` is called.
 - `--help` lists the variables of every section (`TLS_CERT`, `TLS_MIN_VERSION`).
 - Flags are not registered inside sections: a section may not exist before the flags are parsed.
@@ -331,6 +334,16 @@ func (c *CustomLoader) Type() gonfig.ParserType {
 }
 ```
 
+`WithCustomParser` shares one parser between all loads of a `Parser`, so the path of one `Load` would
+overwrite the path of another running at the same time. A parser that keeps state is made for every `Load`
+with `WithCustomParserInit`:
+
+```go
+parser := gonfig.New(gonfig.Config{}, gonfig.WithCustomParserInit(func(gonfig.Config) (gonfig.Parser, error) {
+	return &CustomLoader{}, nil
+}))
+```
+
 ## Options
 
 | Option | Effect |
@@ -344,7 +357,8 @@ func (c *CustomLoader) Type() gonfig.ParserType {
 | `WithCustomOutput(w)`, `WithCustomExit(f)` | Output of `--help` / `--print-config` and the exit function |
 
 `gonfig.Load(&cfg, options...)` is `gonfig.New(gonfig.Config{}, options...).Load(&cfg)`. A `Parser` made
-by `New` can be reused, also from several goroutines.
+by `New` can be reused, also from several goroutines, as long as its custom parsers keep no state of a
+`Load` or are made by `WithCustomParserInit`.
 
 ## Limitations
 

@@ -478,3 +478,31 @@ func TestLoadEnvs_ListItems(t *testing.T) {
 	require.ErrorContains(t, LoadEnvs(PrepareEnvs([]string{"PAIR=5,6,7"}, ""), &config), "length less or equal to 2")
 	require.ErrorContains(t, LoadEnvs(PrepareEnvs([]string{"ADDRS=nope"}, ""), &config), "ADDRS")
 }
+
+func TestLoadEnvs_MapKeys(t *testing.T) {
+	type db struct {
+		Host string `env:"HOST"`
+		Port int    `env:"PORT"`
+	}
+
+	var config struct {
+		Labels map[string]string         `env:"LABELS"`
+		DBs    map[string]db             `env:"DBS"`
+		Ptrs   map[string]*db            `env:"PTRS"`
+		Nested map[string]map[string]int `env:"NESTED"`
+	}
+
+	require.NoError(t, LoadEnvs(PrepareEnvs([]string{
+		"LABELS_team_name=core", "LABELS_team=x", "LABELS_a_b_c=1", "LABELS=ignored",
+		"DBS_main_HOST=h", "DBS_main_PORT=5432", "DBS_replica_HOST=r", "DBS_main=ignored",
+		"PTRS_x_HOST=p",
+		"NESTED_a_b_c=1",
+	}, ""), &config))
+
+	assert.Equal(t, map[string]string{"team_name": "core", "team": "x", "a_b_c": "1"}, config.Labels,
+		"a map of values takes the rest of the name as the key")
+	assert.Equal(t, map[string]db{"main": {Host: "h", Port: 5432}, "replica": {Host: "r"}}, config.DBs,
+		"a map of structs takes the first segment, the rest names a field")
+	assert.Equal(t, map[string]*db{"x": {Host: "p"}}, config.Ptrs)
+	assert.Equal(t, map[string]map[string]int{"a": {"b_c": 1}}, config.Nested)
+}
