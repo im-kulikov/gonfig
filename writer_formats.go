@@ -213,8 +213,9 @@ func tomlKey(key string) string {
 
 // ErrEnvValue is returned by Write in FormatEnv for a value that a line NAME=value
 // cannot hold, so that it would not read back: a line break or a NUL byte in a value
-// or a map key, "=" or an empty map key, a comma in a list item, "_" in a key of a map of structs
-// or maps (the next segment of a name is the key). Other formats can write it.
+// or in a name (a map key, the prefix), "=" in a name, an empty map key, a comma in a list
+// item, "_" in a key of a map of structs or maps (the next segment of a name is the key).
+// Other formats can write it.
 const ErrEnvValue Error = "cannot be written as an environment variable"
 
 // printEnv writes NAME=value for every value env can set, sections flattened.
@@ -239,7 +240,7 @@ func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) error {
 		}
 
 		name := prefixed(prefix, n.env)
-		if reason := envProblem(n, value); reason != "" {
+		if reason := envProblem(n, name, value); reason != "" {
 			return fmt.Errorf("%q %w: %s", name, ErrEnvValue, reason)
 		}
 
@@ -251,12 +252,12 @@ func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) error {
 }
 
 // envProblem tells why a value cannot be written as a line NAME=value, if it cannot.
-func envProblem(n *node, value string) string {
+func envProblem(n *node, name, value string) string {
 	items, _ := n.value.([]any)
 
 	switch {
-	case strings.ContainsAny(n.env, "\n\r=\x00") || n.entry && n.key == "":
-		return `a map key is empty or has a line break, "=" or a NUL byte`
+	case strings.ContainsAny(name, "\n\r=\x00") || n.entry && n.key == "": // the prefix too
+		return `a map key is empty or the name has a line break, "=" or a NUL byte`
 	case strings.ContainsAny(value, "\n\r\x00"):
 		return "the value has a line break or a NUL byte"
 	case slices.ContainsFunc(items, func(item any) bool { text, _ := envValue(item); return strings.Contains(text, ",") }):
