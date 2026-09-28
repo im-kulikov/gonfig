@@ -322,7 +322,7 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 
 		n.section, n.children = true, w.entries(v, env, false)
 
-		return len(n.children) > 0
+		return len(n.children) > 0 || !v.IsNil() // an empty map is written, as {}: it reads back empty, not nil
 	}
 
 	if n.secret {
