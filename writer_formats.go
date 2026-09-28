@@ -213,12 +213,18 @@ func tomlKey(key string) string {
 
 // ErrEnvValue is returned by Write in FormatEnv for a value that a line NAME=value
 // cannot hold, so that it would not read back: a line break in a value or a map key,
-// "=" or an empty map key, a comma in a list item. Other formats can write it.
+// "=" or an empty map key, a comma in a list item, "_" in a key of a map of structs
+// or maps (the next segment of a name is the key). Other formats can write it.
 const ErrEnvValue Error = "cannot be written as an environment variable"
 
 // printEnv writes NAME=value for every value env can set, sections flattened.
 func printEnv(buf *bytes.Buffer, nodes []*node, prefix string) error {
 	for _, n := range nodes {
+		if n.section && n.entry && (n.key == "" || strings.Contains(n.key, envDelimiter)) {
+			return fmt.Errorf("map key %q %w: in a map of structs or maps a key is one segment of a name, "+
+				"not empty and without %q", n.key, ErrEnvValue, envDelimiter)
+		}
+
 		if n.section {
 			if err := printEnv(buf, n.children, prefix); err != nil {
 				return err
