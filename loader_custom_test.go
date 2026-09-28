@@ -108,3 +108,26 @@ func TestCustomErrors(t *testing.T) {
 			"gonfig: could not load: (flags) shorthand is more than one ASCII character \"ff\"")
 	}
 }
+
+type skippedParser struct {
+	typ    ParserType
+	called *bool
+}
+
+func (p skippedParser) Load(any) error   { *p.called = true; return nil }
+func (p skippedParser) Type() ParserType { return p.typ }
+
+func TestSkip_TurnsOffACustomParserOfItsStep(t *testing.T) {
+	for typ, skip := range map[ParserType]func(*Config){
+		ParserDefaults:  func(c *Config) { c.SkipDefaults = true },
+		ParserEnv:       func(c *Config) { c.SkipEnv = true },
+		ParserFlags:     func(c *Config) { c.SkipFlags = true },
+		ParserConfigSet: func(c *Config) { c.SkipFlags = true },
+	} {
+		var called bool
+
+		require.NoError(t, Load(&struct{}{}, WithCustomParser(skippedParser{typ: typ, called: &called}),
+			WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{}; skip(c) })))
+		require.False(t, called, typ)
+	}
+}
