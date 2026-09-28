@@ -143,3 +143,61 @@ type validTree struct {
 	Name     string `required:"true"`
 	Children []*validTree
 }
+
+type nilBase struct{ Port int }
+
+func (b *nilBase) Validate() error { // dereferences its receiver: panics on nil
+	if b.Port == 0 {
+		return errors.New("no port")
+	}
+
+	return nil
+}
+
+type nilValBase struct{ Port int }
+
+func (b nilValBase) Validate() error { return (&nilBase{Port: b.Port}).Validate() }
+
+type (
+	nilPromoted  struct{ *nilBase }
+	nilValRecv   struct{ *nilValBase }
+	nilInterface struct{ LoaderValidator }
+	nilMiddle    struct{ nilPromoted }
+	nilOwn       struct{ *nilBase }
+)
+
+func (nilOwn) Validate() error { return errors.New("own") }
+
+func TestValidate_NilEmbedded(t *testing.T) {
+	for name, tc := range map[string]struct {
+		v   any
+		err string
+	}{
+		"promoted from a nil pointer":          {v: &nilPromoted{}},
+		"value receiver through a nil pointer": {v: &nilValRecv{}},
+		"promoted from a nil interface":        {v: &nilInterface{}},
+		"through a struct to a nil pointer":    {v: &nilMiddle{}},
+		"through a pointer to a nil pointer":   {v: &struct{ *nilMiddle }{nilMiddle: &nilMiddle{}}},
+		"nested":                               {v: &struct{ Inner nilPromoted }{}},
+		"in a list":                            {v: &struct{ Items []nilPromoted }{Items: []nilPromoted{{}}}},
+		"promoted from a set pointer":          {v: &nilPromoted{nilBase: &nilBase{}}, err: "no port"},
+		"promoted from a set interface":        {v: &nilInterface{LoaderValidator: &nilBase{}}, err: "no port"},
+		"its own, next to a nil pointer":       {v: &nilOwn{}, err: "own"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validate(tc.v)
+			if tc.err == "" {
+				require.NoError(t, err, "a part not set is not validated")
+
+				return
+			}
+
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
+
+	assert.True(t, promoted(reflect.TypeFor[nilPromoted]()), "the compiler still makes wrappers of promoted methods")
+	assert.False(t, promoted(reflect.TypeFor[nilOwn]()))
+	assert.False(t, promoted(reflect.TypeFor[nilBase]()))
+	assert.False(t, promoted(reflect.TypeFor[struct{}]()), "no Validate at all")
+}

@@ -273,7 +273,8 @@ with `gonfig.WithEnvPrefix(prefix)` when the loader uses `Config.EnvPrefix`.
 `required:"true"` fails the loading when the field is still its zero value after every source, so `0` and
 `false` cannot be required values. The error lists every missing field with its path. Then `Validate()`
 is called for every struct that implements `LoaderValidator`: nested structs first, the struct passed to
-`Load` last; errors of nested structs name their field (`Server: port 80 is privileged`):
+`Load` last; errors of nested structs name their field (`Server: port 80 is privileged`). A `Validate` a
+struct gets from an embedded pointer that is nil is not called: that part is not set.
 
 ```go
 func (c *Config) Validate() error {
