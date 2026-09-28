@@ -305,6 +305,28 @@ func TestWrite_ListWithItemLeftOut(t *testing.T) {
 	}
 }
 
+func TestWrite_MapWithEntryLeftOut(t *testing.T) {
+	type config struct {
+		Ports map[string]*int `yaml:"ports" json:"ports" toml:"ports"`
+		Bad   map[string]any  `yaml:",inline" json:",inline" toml:",inline"`
+	}
+
+	one := 1
+	v := config{Ports: map[string]*int{"a": &one, "x": nil}, Bad: map[string]any{"b": 1, "y": nil}}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &v, format)
+			assert.NotContains(t, output, "ports", "not the map without x, which reads back without it")
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Nil(t, got.Ports)
+			assert.Nil(t, got.Bad, "an inline map too")
+		})
+	}
+}
+
 func TestWrite_EnvCannotHold(t *testing.T) {
 	for name, v := range map[string]any{
 		"a line break": &struct {
@@ -531,7 +553,7 @@ func TestWrite_MapAndListCycles(t *testing.T) {
 		Inline map[string]any `yaml:",inline"`
 	}
 
-	assert.Equal(t, "map:\n  a: 1\nnested: {}\na: 1\n",
+	assert.Equal(t, "{}\n",
 		write(t, &config{Map: m, List: l, Nested: n, Inline: m}, FormatYAML),
 		"a map or a list inside itself is left out, not written forever")
 }

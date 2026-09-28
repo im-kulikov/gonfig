@@ -69,9 +69,9 @@ var writers = map[Format]writer{
 // order they are declared.
 //
 // A value the format cannot hold is an error: in FormatEnv a line break in a value
-// (ErrEnvValue). A value whose MarshalText fails is left out, and so is a list with
-// an item that cannot be written (nil, or its MarshalText fails): a shorter list
-// would read back with its items shifted.
+// (ErrEnvValue). A value whose MarshalText fails is left out, and so is a list or a
+// map with an item that cannot be written (nil, or its MarshalText fails): it would
+// read back without the item, the items of a list after it shifted.
 //
 // Values of `secret:"true"` fields are left empty. YAML, TOML and env output
 // have a comment above every value with its `usage`, environment variable and
@@ -272,7 +272,9 @@ func (w walker) inlined(v reflect.Value, env envName, secret bool) []*node {
 	switch {
 	case v.Kind() == reflect.Map && !secret: // even the keys of a secret map may tell too much
 		if inner, ok := w.into(v); ok {
-			return inner.entries(v, env, false)
+			nodes, _ := inner.entries(v, env, false) // none if one cannot be written
+
+			return nodes
 		}
 	case v.Kind() == reflect.Struct:
 		return w.fields(v, env, secret)
@@ -333,13 +335,18 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 		}
 
 		inner, ok := w.into(v)
+		if !ok || v.IsNil() {
+			return false
+		}
+
+		children, ok := inner.entries(v, env, false)
 		if !ok {
 			return false
 		}
 
-		n.section, n.children = true, inner.entries(v, env, false)
+		n.section, n.children = true, children
 
-		return len(n.children) > 0 || !v.IsNil() // an empty map is written, as {}: it reads back empty, not nil
+		return true // an empty map is written too, as {}: it reads back empty, not nil
 	}
 
 	if n.secret {
@@ -356,8 +363,9 @@ func (w walker) fill(n *node, v reflect.Value, env envName) bool {
 	return ok
 }
 
-// entries are the items of a map, in the order of their keys.
-func (w walker) entries(v reflect.Value, env envName, secret bool) []*node {
+// entries are the items of a map, in the order of their keys; false if one cannot
+// be written: the map is left out as a whole, not written without the entry.
+func (w walker) entries(v reflect.Value, env envName, secret bool) ([]*node, bool) {
 	out := make([]*node, 0, v.Len())
 
 	for key, value := range v.Seq2() {
@@ -367,15 +375,16 @@ func (w walker) entries(v reflect.Value, env envName, secret bool) []*node {
 		}
 
 		n := &node{key: name, secret: secret, entry: true}
-
-		if ok && w.fill(n, value, env.key(name)) {
-			out = append(out, n)
+		if !ok || !w.fill(n, value, env.key(name)) {
+			return nil, false
 		}
+
+		out = append(out, n)
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 
-	return out
+	return out, true
 }
 
 // value converts a field value to a plain value the encoders write as is.
@@ -419,7 +428,7 @@ func (w walker) value(v reflect.Value) (any, bool) {
 			return nil, false
 		}
 
-		return inner.entries(v, envName{}, false), true
+		return inner.entries(v, envName{}, false)
 	default: // funcs, channels: not a config value
 		return nil, false
 	}
