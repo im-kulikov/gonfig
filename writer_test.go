@@ -318,6 +318,18 @@ func TestWrite_EnvCannotHold(t *testing.T) {
 			require.NoError(t, Write(&buf, v, FormatYAML), "other formats hold it")
 		})
 	}
+
+	t.Run("a prefix with a line break or =", func(t *testing.T) {
+		v := &struct {
+			Name string `env:"NAME"`
+		}{Name: "x"}
+
+		for _, prefix := range []string{"A=B", "A\nADMIN", "A\x00B"} {
+			var buf bytes.Buffer
+			require.ErrorIs(t, Write(&buf, v, FormatEnv, WithEnvPrefix(prefix)), ErrEnvValue, "%q", prefix)
+			assert.Empty(t, buf.String(), "nothing is written")
+		}
+	})
 }
 
 type shadowBase struct {
