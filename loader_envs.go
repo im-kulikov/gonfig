@@ -74,7 +74,9 @@ const (
 // Returns a Parser that processes environment variables with the specified prefix.
 func newEnvLoader(l *loader) *parserFunc {
 	return &parserFunc{name: ParserEnv, call: func(v any) error {
-		return loadEnvs(PrepareEnvs(l.Envs, l.EnvPrefix), v, l.SkipDefaults)
+		return decodeMap(v, PrepareEnvs(l.Envs, l.EnvPrefix), decodeOptions{
+			tag: envTag, inline: envInlineOption, env: true, noTags: l.SkipDefaults, prefix: l.EnvPrefix,
+		})
 	}}
 }
 
@@ -597,6 +599,7 @@ type decodeOptions struct {
 	strict   bool   // keys that match no field are an error (files only: env holds every variable)
 	env      bool   // resolve a name that is both a variable and the start of others (envClashHook)
 	noTags   bool   // Config.SkipDefaults: a section a source creates does not get its `default` tags
+	prefix   string // Config.EnvPrefix, to name the variables in errors (env only)
 }
 
 func decodeMapToStruct(dest any, from map[string]any, tag string, skipDefaults bool) error {
@@ -640,6 +643,10 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 			err = inner
 		}
 
+		if options.env {
+			err = envNames(err, envPrefix(options.prefix))
+		}
+
 		return fmt.Errorf("%w: %w", ErrDecode, singleLine{err})
 	}
 
@@ -650,12 +657,28 @@ func decodeMap(dest any, from map[string]any, options decodeOptions) error {
 // It uses mapstructure to map the environment variables to the fields of the destination
 // object based on the "env" tag. It returns an error if decoding fails.
 func LoadEnvs(envs map[string]any, dest any) error {
-	return loadEnvs(envs, dest, false)
+	return decodeMap(dest, envs, decodeOptions{tag: envTag, inline: envInlineOption, env: true})
 }
 
-func loadEnvs(envs map[string]any, dest any, skipDefaults bool) error {
-	return decodeMap(dest, envs, decodeOptions{tag: envTag, inline: envInlineOption, env: true, noTags: skipDefaults})
+// envNames names the variables in an error of the env decoder: mapstructure names a
+// field by its keys, 'DB.PORT' or 'LABELS[team]', the user has set APP_DB_PORT.
+func envNames(err error, prefix string) error {
+	switch e := err.(type) { //nolint:errorlint // the errors of mapstructure, as it returns them
+	case interface{ Unwrap() []error }:
+		errs := e.Unwrap()
+		for i := range errs {
+			errs[i] = envNames(errs[i], prefix)
+		}
+
+		return errors.Join(errs...)
+	case *mapstructure.DecodeError:
+		return fmt.Errorf("%s%s: %w", prefix, envNameReplacer.Replace(e.Name()), e.Unwrap())
+	}
+
+	return err
 }
+
+var envNameReplacer = strings.NewReplacer(".", envDelimiter, "[", envDelimiter, "]", "")
 
 // jsonNumberHook turns json.Number from JSON files into a Go number before the
 // other hooks run: they expect a plain string or number and would misread it.

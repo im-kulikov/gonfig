@@ -106,3 +106,39 @@ func TestFlags_MoreTypesInvalid(t *testing.T) {
 	err := Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{"--port=x"}, []string{} }))
 	require.ErrorContains(t, err, `invalid argument "x" for "--port" flag`)
 }
+
+func TestFlags_RepeatedAndPointerBool(t *testing.T) {
+	var config struct {
+		Levels  []slog.Level    `flag:"level" default:"error"`
+		Weights map[string]bool `flag:"weight" default:"z:true"`
+		Debug   *bool           `flag:"debug"`
+	}
+
+	require.NoError(t, Load(&config, WithConfig(func(c *Config) {
+		c.Envs = []string{}
+		c.Args = []string{"--level=debug", "--level=warn,info", "--weight=a:true", "--weight=b:false", "--debug"}
+	})))
+
+	assert.Equal(t, []slog.Level{slog.LevelDebug, slog.LevelWarn, slog.LevelInfo}, config.Levels,
+		"a flag given again adds to the list, the first replaces the default")
+	assert.Equal(t, map[string]bool{"a": true, "b": false}, config.Weights)
+	require.NotNil(t, config.Debug)
+	assert.True(t, *config.Debug, "--debug needs no value")
+}
+
+func TestFlags_SecretValueNotInError(t *testing.T) {
+	var config struct {
+		Key []byte `flag:"key,base:hex" secret:"true"`
+		Pin int    `flag:"pin" secret:"true"`
+	}
+
+	for _, arg := range []string{"--key=00112233XX", "--pin=12x34"} {
+		var out bytes.Buffer
+
+		err := Load(&config, WithCustomOutput(&out), WithConfig(func(c *Config) {
+			c.Args, c.Envs = []string{arg}, []string{}
+		}))
+		require.ErrorContains(t, err, "the value is secret")
+		assert.NotContains(t, err.Error()+out.String(), arg[strings.Index(arg, "=")+1:])
+	}
+}

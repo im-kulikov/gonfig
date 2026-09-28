@@ -95,11 +95,23 @@ func newFlagsLoader(l *loader) *parserFunc {
 		set.SetOutput(l.buffer)
 
 		if err := set.Parse(l.Args); err != nil {
-			return err
+			return hideSecret(err)
 		}
 
 		return setPositionalArgs(val, set.Args())
 	}}
+}
+
+// hideSecret leaves the value out of the error of a secret flag: pflag quotes it.
+func hideSecret(err error) error {
+	var invalid *pflag.InvalidValueError
+	if errors.As(err, &invalid) {
+		if _, secret := invalid.GetFlag().Annotations[SecretTag]; secret {
+			return fmt.Errorf("invalid argument for --%s flag: the value is secret", invalid.GetFlag().Name)
+		}
+	}
+
+	return err
 }
 
 // setPositionalArgs gives the arguments left after the flags (all after "--" too) to
@@ -144,6 +156,10 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 		}
 
 		flagSet.Lookup(options.FlagFullName).DefValue = flagDefault(elem, options)
+
+		if isSecret(elem) {
+			_ = flagSet.SetAnnotation(options.FlagFullName, SecretTag, nil) // the flag exists
+		}
 	}
 
 	return nil
@@ -376,9 +392,9 @@ func prepareFlag(flagSet *pflag.FlagSet, field reflect.Value, info TagOptions) e
 			return fmt.Errorf("unknown type: %T", p)
 		}
 
-		flagSet.VarP(fieldValue{field}, name, short, usage)
+		flagSet.VarP(fieldValue{field: field, set: new(false)}, name, short, usage)
 
-		if field.Kind() == reflect.Bool { // like a bool flag: --enabled means true
+		if derefType(field.Type()).Kind() == reflect.Bool { // like a bool flag: --enabled means true
 			flagSet.Lookup(name).NoOptDefVal = "true"
 		}
 	}
@@ -423,7 +439,11 @@ func parsable(t reflect.Type) bool {
 
 // fieldValue is the flag of a field whose type pflag has no flag for. It parses a value
 // like a `default` tag does: lists and maps are comma-separated, `k:v` for map entries.
-type fieldValue struct{ field reflect.Value }
+// As with pflag's own lists and maps, the flag given again adds to a list or a map.
+type fieldValue struct {
+	field reflect.Value
+	set   *bool // by this flag before
+}
 
 func (f fieldValue) Set(value string) error {
 	parsed := reflect.New(f.field.Type()).Elem()
@@ -431,6 +451,19 @@ func (f fieldValue) Set(value string) error {
 		return err
 	}
 
+	switch {
+	case !*f.set:
+	case parsed.Kind() == reflect.Slice:
+		parsed = reflect.AppendSlice(f.field, parsed)
+	case parsed.Kind() == reflect.Map:
+		for key, item := range f.field.Seq2() {
+			if !parsed.MapIndex(key).IsValid() {
+				parsed.SetMapIndex(key, item)
+			}
+		}
+	}
+
+	*f.set = true
 	f.field.Set(parsed)
 
 	return nil

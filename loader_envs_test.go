@@ -1,6 +1,7 @@
 package gonfig
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"net"
@@ -525,4 +526,42 @@ func TestUsageOfEnvs_EmbeddedAndMaps(t *testing.T) {
 
 	require.NoError(t, LoadEnvs(PrepareEnvs([]string{"HOST=h", "DB_HOST=wrong"}, ""), &config))
 	assert.Equal(t, "h", config.Host)
+}
+
+func TestLoadEnvs_ErrorNamesTheVariable(t *testing.T) {
+	var config struct {
+		DB struct {
+			Port int `env:"PORT"`
+		} `env:"DB"`
+		Counts map[string]int `env:"COUNTS"`
+		Ports  []int          `env:"PORTS"`
+	}
+
+	err := Load(&config, WithConfig(func(c *Config) {
+		c.Args, c.EnvPrefix = []string{}, "APP"
+		c.Envs = []string{"APP_DB_PORT=abc", "APP_COUNTS_a=x", "APP_PORTS=1,y"}
+	}))
+	require.ErrorIs(t, err, ErrDecode)
+
+	for _, name := range []string{"APP_DB_PORT: ", "APP_COUNTS_a: ", "APP_PORTS_1: "} {
+		assert.Contains(t, err.Error(), name)
+	}
+
+	assert.Equal(t, ErrDecode, envNames(ErrDecode, "APP_"), "an error of another kind is kept")
+}
+
+func TestLoad_HelpWhenASourceFails(t *testing.T) {
+	var config struct {
+		Port int `env:"PORT" flag:"port"`
+	}
+
+	var out bytes.Buffer
+	err := Load(&config, WithCustomOutput(&out), WithCustomExit(func(int) {}), WithConfig(func(c *Config) {
+		c.Args, c.Envs = []string{"--help"}, []string{"PORT=abc"}
+	}))
+	require.ErrorIs(t, err, ErrTestExit, "--help is shown, so the user can fix PORT")
+	assert.Contains(t, out.String(), "--port int")
+
+	err = Load(&config, WithConfig(func(c *Config) { c.Args, c.Envs = []string{"--", "--help"}, []string{"PORT=abc"} }))
+	require.ErrorIs(t, err, ErrDecode, "after -- it is an argument")
 }
