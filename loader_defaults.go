@@ -207,14 +207,14 @@ func setDefaultValue(field reflect.Value, value string) error {
 		field.SetString(value)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		var v uint64
-		if v, err = strconv.ParseUint(value, 10, field.Type().Bits()); err != nil {
+		if v, err = strconv.ParseUint(value, 0, field.Type().Bits()); err != nil {
 			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
 		field.SetUint(v)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		var v int64
-		if v, err = strconv.ParseInt(value, 10, field.Type().Bits()); err != nil {
+		if v, err = strconv.ParseInt(value, 0, field.Type().Bits()); err != nil {
 			return fmt.Errorf("could not parse %q: %w", value, err)
 		}
 
