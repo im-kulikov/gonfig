@@ -552,7 +552,7 @@ func decodeHooks() mapstructure.DecodeHookFunc {
 		mapstructure.StringToIPHookFunc(),
 		mapstructure.StringToIPNetHookFunc(),
 
-		replaceListHook)
+		replaceHook)
 }
 
 // splitListHook reads a list or an array from a comma-separated string ("a,b" from env):
@@ -569,12 +569,12 @@ func splitListHook(from, to reflect.Value) (any, error) {
 	return strings.Split(from.String(), ","), nil
 }
 
-// replaceListHook empties a list or an array before a source writes it, so the source
-// replaces it, as a file did with yaml.v3: mapstructure would keep the old items past
-// the new ones, write into the backing array of the caller, and skip the length check
-// of an array that is not empty.
-func replaceListHook(from, to reflect.Value) (any, error) {
-	if isList(to.Kind()) && isList(from.Kind()) && to.CanSet() {
+// replaceHook empties a list, an array or an `any` before a source writes it, so the
+// source replaces it, as a file did with yaml.v3: mapstructure would keep the old items
+// past the new ones, write into the backing array of the caller, skip the length check
+// of an array that is not empty, and fail to put a string into an any holding a map.
+func replaceHook(from, to reflect.Value) (any, error) {
+	if (isList(to.Kind()) && isList(from.Kind()) || to.Kind() == reflect.Interface) && to.CanSet() {
 		to.Set(reflect.Zero(to.Type()))
 	}
 

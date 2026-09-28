@@ -200,17 +200,25 @@ func decodeFile(format fileFormat, r io.Reader, dest any, config *Config) error 
 }
 
 // parseJSON keeps numbers as json.Number, so int64 values beyond 2^53 are not
-// rounded through float64, and treats an empty file as an empty object.
+// rounded through float64, and treats an empty file as an empty object. Anything
+// after the object is an error, as with json.Unmarshal.
 func parseJSON(data []byte, tree any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 
-	if err := dec.Decode(tree); !errors.Is(err, io.EOF) {
+	switch err := dec.Decode(tree); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil:
 		return err
+	case dec.Decode(new(json.RawMessage)) != io.EOF: //nolint:errorlint // the decoder returns io.EOF itself
+		return errJSONAfterObject
 	}
 
 	return nil
 }
+
+var errJSONAfterObject = errors.New("invalid character after the top-level value")
 
 // yamlScalar is a scalar of a YAML file. A field reads its text, as it reads an
 // environment variable: a string gets 1.10 as written, a number that does not fit
