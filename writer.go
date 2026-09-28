@@ -158,8 +158,7 @@ func (e envName) field(field reflect.StructField) envName {
 	switch {
 	case !e.ok || parts[0] == "-":
 		return envName{}
-	case field.Anonymous && derefType(field.Type).Kind() == reflect.Struct,
-		parts[0] == "" && slices.Contains(parts[1:], envInlineOption):
+	case envInlined(field, parts, derefType(field.Type)): // not a struct read from text, such as time.Time
 		return e
 	case parts[0] == "":
 		return envName{}
