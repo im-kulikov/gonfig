@@ -463,6 +463,7 @@ func TestFileLoader_Values(t *testing.T) {
 		Int    int               `yaml:"int" json:"int" toml:"int"`
 		Int64  int64             `yaml:"int64" json:"int64" toml:"int64"`
 		Uint16 uint16            `yaml:"uint16" json:"uint16" toml:"uint16"`
+		Float  float64           `yaml:"float" json:"float" toml:"float"`
 		Wait   time.Duration     `yaml:"wait" json:"wait" toml:"wait"`
 		Time   time.Time         `yaml:"time" json:"time" toml:"time"`
 		At     *time.Time        `yaml:"at" json:"at" toml:"at"`
@@ -500,6 +501,8 @@ func TestFileLoader_Values(t *testing.T) {
 			want: values{Int: 2, Wait: 5 * time.Second, Any: map[string]any{"a": []any{1.0, 9007199254740992.0, "x"}}}},
 		{kind: ParserJSON, content: `{"int64": 9223372036854775808}`, err: "does not fit in int64"},
 		{kind: ParserJSON, content: `{"wait": 1.5}`, err: "1.5 does not fit in time.Duration"},
+		{kind: ParserJSON, content: `{"float": 1e400}`, err: "value out of range"},         // not +Inf
+		{kind: ParserJSON, content: `{"any": [1e400]}`, want: values{Any: []any{"1e400"}}}, // as YAML
 		{kind: ParserTOML, content: "time = 2024-01-02\nat = 2024-01-02T03:04:05",
 			want: values{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local),
 				At: new(time.Date(2024, 1, 2, 3, 4, 5, 0, time.Local))}},

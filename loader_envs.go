@@ -701,9 +701,17 @@ func jsonNumber(number json.Number) any {
 		return v
 	}
 
-	v, _ := number.Float64() // the JSON decoder has checked the syntax; a huge number is ±Inf
+	return jsonFloat(number)
+}
 
-	return v
+// jsonFloat is a JSON number as a float64 or, beyond its range, as its text, as
+// YAML leaves 1e400: a number field rejects it as it rejects the same text from env.
+func jsonFloat(number json.Number) any {
+	if v, err := number.Float64(); err == nil {
+		return v
+	}
+
+	return number.String()
 }
 
 // plainHook gives a field of type any the plain values of a file, inside lists and
@@ -721,9 +729,7 @@ func plain(data any) any {
 	case yamlScalar:
 		return value.value
 	case json.Number:
-		v, _ := value.Float64()
-
-		return v
+		return jsonFloat(value)
 	case map[string]any:
 		out := make(map[string]any, len(value))
 		for key, item := range value {
