@@ -150,7 +150,7 @@ func (e envName) field(field reflect.StructField) envName {
 	switch {
 	case !e.ok || parts[0] == "-":
 		return envName{}
-	case field.Anonymous && field.Type.Kind() == reflect.Struct,
+	case field.Anonymous && derefType(field.Type).Kind() == reflect.Struct,
 		parts[0] == "" && slices.Contains(parts[1:], envInlineOption):
 		return e
 	case parts[0] == "":
@@ -189,7 +189,7 @@ func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 
 		fieldSecret := secret || isTrue(field.Tag, SecretTag)
 		if inline {
-			out = append(out, w.fields(value, env.field(field), fieldSecret)...)
+			out = append(out, w.inlined(value, env.field(field), fieldSecret)...)
 
 			continue
 		}
@@ -207,19 +207,37 @@ func (w walker) fields(v reflect.Value, env envName, secret bool) []*node {
 	return out
 }
 
+// inlined returns the nodes of an inlined field: the fields of a struct or of the
+// struct a pointer points to, the entries of a map (see inlineHook).
+func (w walker) inlined(v reflect.Value, env envName, secret bool) []*node {
+	switch {
+	case v.Kind() == reflect.Map && !secret: // even the keys of a secret map may tell too much
+		return w.entries(v, env, false)
+	case v.Kind() == reflect.Struct:
+		return w.fields(v, env, secret)
+	case v.Kind() == reflect.Pointer && !v.IsNil():
+		return w.fields(v.Elem(), env, secret)
+	}
+
+	return nil
+}
+
 // key returns the key of a field, whether the field is inlined into its parent,
 // or whether it is left out, by the same rules the loader decodes with.
 func (w walker) key(field reflect.StructField) (key string, inline, skip bool) {
 	parts := strings.Split(field.Tag.Get(w.tag), ",")
+	elem := derefType(field.Type)
+	isStruct := elem.Kind() == reflect.Struct && !isTextValue(elem)
 
 	switch {
 	case parts[0] == "-", ParseTagOptions(field.Tag).FlagArgs: // positional arguments are not configuration
 		return "", false, true
-	case field.Type.Kind() == reflect.Struct && !isTextValue(field.Type) &&
-		(field.Anonymous || slices.Contains(parts[1:], w.inline)):
+	case field.Anonymous && isStruct:
 		return "", true, false
 	case !field.IsExported():
 		return "", false, true
+	case slices.Contains(parts[1:], w.inline) && (isStruct || w.inline == fileInlineOption && elem.Kind() == reflect.Map):
+		return "", true, false
 	case parts[0] == "":
 		return field.Name, false, false
 	}

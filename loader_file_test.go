@@ -521,3 +521,52 @@ func TestFileLoader_Values(t *testing.T) {
 		})
 	}
 }
+
+type inlineTLS struct {
+	Cert string `yaml:"cert" json:"cert" toml:"cert"`
+}
+
+type inlineServer struct {
+	Host string `yaml:"host" json:"host" toml:"host"`
+}
+
+type inlineConfig struct {
+	Name   string            `yaml:"name"  json:"name"  toml:"name"`
+	Server inlineServer      `yaml:",inline" json:",inline" toml:",inline"`
+	TLS    *inlineTLS        `yaml:",inline" json:",inline" toml:",inline"`
+	Extra  map[string]string `yaml:",inline" json:",inline" toml:",inline"`
+	hidden inlineServer      `yaml:",inline"` //nolint:unused // an unexported field is left out
+}
+
+func TestFileLoader_InlineMap(t *testing.T) {
+	var config inlineConfig
+	require.NoError(t, loadFile(t, ParserYAML, "name: x\nHOST: h\ncert: c\nfoo: bar\nmode: '1'", &config))
+	assert.Equal(t, inlineConfig{Name: "x", Server: inlineServer{Host: "h"}, TLS: &inlineTLS{Cert: "c"},
+		Extra: map[string]string{"foo": "bar", "mode": "1"}}, config, "a map takes the keys no field has")
+
+	parser := testFileLoader(t, ParserYAML)
+	parser.SetConfigPath(writeTempFile(t, "strict.yaml", "name: y\nfoo: bar"))
+	parser.setStrict(true)
+
+	config = inlineConfig{}
+	require.NoError(t, parser.Load(&config), "keys taken by an inlined map are known")
+	assert.Nil(t, config.TLS, "a pointer without any of its keys stays nil")
+	assert.NotContains(t, write(t, &config, FormatYAML), "cert", "a nil pointer is left out")
+
+	secret := struct {
+		Extra map[string]string `yaml:",inline" secret:"true"`
+	}{Extra: map[string]string{"token": "x"}}
+	assert.NotContains(t, write(t, &secret, FormatYAML), "token", "not even the keys of a secret map")
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			want := inlineConfig{Name: "x", Server: inlineServer{Host: "h"}, TLS: &inlineTLS{Cert: "c"},
+				Extra: map[string]string{"foo": "bar"}}
+			output := write(t, &want, format)
+
+			var got inlineConfig
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Equal(t, want, got, output)
+		})
+	}
+}

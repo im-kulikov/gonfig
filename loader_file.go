@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v3"
 )
@@ -333,3 +337,97 @@ func tomlTimeHook(_, to reflect.Type, data any) (any, error) {
 }
 
 var timeType = reflect.TypeFor[time.Time]()
+
+// noTagSquash turns off inlining by a tag option in mapstructure, which fails on a map:
+// no tag has this option. Embedded structs are still inlined by mapstructure.
+const noTagSquash = "\x00"
+
+// inlineHook inlines the fields tagged `,inline` of a struct, as yaml.v3 does, by
+// moving their keys under the field name before the struct is decoded: a struct, or a
+// pointer to one, takes the keys of its fields; a map takes the keys no other field has.
+// Without any of its keys a pointer stays nil.
+func inlineHook(tag string) mapstructure.DecodeHookFuncType {
+	return func(_, to reflect.Type, data any) (any, error) {
+		tree, ok := data.(map[string]any)
+		if !ok || to.Kind() != reflect.Struct {
+			return data, nil
+		}
+
+		var inlined []reflect.StructField
+
+		taken := inlineKeys(to, tag, &inlined)
+		if len(inlined) == 0 {
+			return data, nil
+		}
+
+		tree = maps.Clone(tree)
+		fields := make(map[string]any, len(inlined))
+
+		for _, field := range inlined {
+			moved := make(map[string]any)
+
+			own := inlineKeys(derefType(field.Type), tag, nil)
+			for key, value := range tree {
+				if field.Type.Kind() == reflect.Map && !matchesKey(taken, key) || matchesKey(own, key) {
+					moved[key] = value
+					delete(tree, key)
+				}
+			}
+
+			if len(moved) > 0 {
+				fields[field.Name] = moved
+			}
+		}
+
+		maps.Copy(tree, fields)
+
+		return tree, nil
+	}
+}
+
+// inlineKeys returns the keys of the fields of a struct t, with the keys of its inlined
+// structs, and adds its fields tagged `,inline` to inlined.
+func inlineKeys(t reflect.Type, tag string, inlined *[]reflect.StructField) []string {
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+
+	var keys []string
+
+	for field := range t.Fields() {
+		parts := strings.Split(field.Tag.Get(tag), ",")
+		elem := derefType(field.Type)
+		isStruct := elem.Kind() == reflect.Struct && !textStruct(elem)
+
+		switch {
+		case parts[0] == "-" || !field.IsExported() && !field.Anonymous:
+		case field.Anonymous && isStruct: // inlined by mapstructure
+			keys = append(keys, inlineKeys(elem, tag, inlined)...)
+		case slices.Contains(parts[1:], fileInlineOption) && (isStruct || field.Type.Kind() == reflect.Map):
+			if inlined != nil {
+				*inlined = append(*inlined, field)
+			}
+
+			keys = append(keys, inlineKeys(elem, tag, nil)...)
+		case parts[0] == "":
+			keys = append(keys, field.Name)
+		default:
+			keys = append(keys, parts[0])
+		}
+	}
+
+	return keys
+}
+
+// matchesKey reports whether key is one of keys, ignoring case, as mapstructure matches them.
+func matchesKey(keys []string, key string) bool {
+	return slices.ContainsFunc(keys, func(k string) bool { return strings.EqualFold(k, key) })
+}
+
+func derefType(t reflect.Type) reflect.Type {
+	if t.Kind() == reflect.Pointer {
+		return t.Elem()
+	}
+
+	return t
+}

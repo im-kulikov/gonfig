@@ -89,7 +89,7 @@ turns off the config path). After loading, `required` fields are checked and `Va
 | | `flag:"key,base:hex"` | Encoding of a `[]byte` flag: `hex` or `b64` |
 | | `flag:"config,short:c,config:true"` | The string field is the path of the config file |
 | | `flag:",args"` | The `[]string` field gets the positional arguments |
-| `yaml`, `json`, `toml` | `yaml:"port"`, `yaml:",inline"` | Key in a config file; `,inline` inlines a nested struct; `-` ignores the field |
+| `yaml`, `json`, `toml` | `yaml:"port"`, `yaml:",inline"` | Key in a config file; `,inline` inlines a nested struct (or a pointer to one), or gives a map the keys no field has; `-` ignores the field |
 | `usage` | `usage:"server port"` | Description in `--help` and in exported configs |
 | `required` | `required:"true"` | Loading fails if the field is still its zero value |
 | `secret` | `secret:"true"` | Never shown in `--help` or exported configs; on a struct, covers its fields |
