@@ -113,6 +113,8 @@ func (e singleLine) Unwrap() error { return e.error }
 // Parsers run in the order they were added; adding a parser of the same type again
 // replaces it. A parser of a built-in type replaces the built-in one (see ParserType).
 // A nil parser is ignored. To get the path from --config, implement ParserConfigSetter.
+// The parser is shared by all loads of a Parser; one that keeps the state of a Load,
+// such as the config path, is made for every Load with WithCustomParserInit instead.
 //
 //	parser := gonfig.New(gonfig.Config{}, gonfig.WithCustomParser(myParser))
 func WithCustomParser(p Parser) LoaderOption {
@@ -307,7 +309,7 @@ func WithStrict() LoaderOption {
 // - A `LoaderOption` function that applies the default values to the loader's output.
 func WithDefaults(keyTag string, defaults map[string]any) LoaderOption {
 	return func(l *loader) error {
-		return decodeMapToStruct(l.output, defaults, keyTag)
+		return decodeMapToStruct(l.output, defaults, keyTag, l.SkipDefaults)
 	}
 }
 
@@ -398,8 +400,8 @@ func (l *loader) load(v any) error {
 			setter.SetConfigPath(l.configPathFor(typ))
 		}
 
-		if setter, ok := parser.(strictSetter); ok {
-			setter.setStrict(l.Strict)
+		if setter, ok := parser.(configSetter); ok {
+			setter.setConfig(l.Config)
 		}
 
 		if err := parser.Load(v); err != nil {

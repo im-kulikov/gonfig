@@ -124,13 +124,21 @@ func TestPointers_NotSections(t *testing.T) {
 		} `env:"INNER"`
 	}
 
-	require.NoError(t, Load(&v, WithConfig(func(c *Config) {
-		c.Args, c.Envs = []string{}, []string{"SINCE=2026-09-28T00:00:00Z", "PORT=1", "INNER_OTHER=x"}
-	})))
+	load := func(envs ...string) {
+		require.NoError(t, Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, envs })))
+	}
+
+	load("SINCE=2026-09-28T00:00:00Z", "PORT=1", "INNER_OTHER=x")
 	assert.Equal(t, time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC), *v.Since)
 	assert.Equal(t, 1, *v.Port)
-	require.NotNil(t, v.Inner, "INNER_OTHER creates the section")
-	assert.Equal(t, "inner", v.Inner.Name)
+	assert.Nil(t, v.Inner, "INNER_OTHER sets no field: it belongs to something else")
+
+	load("INNER_DEEPER_OTHER=x", "INNER_DEEPER=y")
+	assert.Nil(t, v.Inner, "nor do these")
+
+	load("INNER_NAME=n", "INNER_DEEPER_OTHER=x")
+	require.NotNil(t, v.Inner, "INNER_NAME creates the section")
+	assert.Equal(t, "n", v.Inner.Name)
 	assert.Nil(t, v.Inner.Deeper, "a nested section nobody set stays nil")
 }
 
@@ -160,4 +168,47 @@ func TestUsageOfEnvs_Sections(t *testing.T) {
 	assert.Nil(t, v.TLS, "the struct passed in is not changed")
 
 	assert.Equal(t, "Environment variables:\n  - 'NAME' <string>\n  - 'NEXT' <*gonfig.ptrNode>", UsageOfEnvs(&ptrNode{}))
+}
+
+func TestPointers_SkipDefaults(t *testing.T) {
+	var fromEnv ptrServer
+	require.NoError(t, Load(&fromEnv, WithConfig(func(c *Config) {
+		c.Args, c.Envs, c.SkipDefaults = []string{}, []string{"TLS_CERT=c"}, true
+	})))
+	assert.Equal(t, &ptrTLS{Cert: "c"}, fromEnv.TLS, "SkipDefaults: a section starts empty")
+
+	var fromFile struct {
+		DefaultConfigFlag
+		ptrServer
+	}
+
+	config := writeTempFile(t, "c.yaml", "tls: {cert: c}")
+	require.NoError(t, Load(&fromFile, WithYAMLLoader(), WithConfig(func(c *Config) {
+		c.Args, c.Envs, c.SkipDefaults = []string{"-c", config}, []string{}, true
+	})))
+	assert.Equal(t, &ptrTLS{Cert: "c"}, fromFile.TLS)
+}
+
+func TestPointers_SectionSetByMapOrSquash(t *testing.T) {
+	type section struct {
+		Labels map[string]string `env:"LABELS"`
+		Inner  struct {
+			Name string `env:"NAME"`
+		} `env:",squash"`
+	}
+
+	for envs, want := range map[string]*section{
+		"SEC_OTHER=x":    nil,
+		"SEC_LABELS_a=1": {Labels: map[string]string{"a": "1"}},
+		"SEC_NAME=n": {Inner: struct {
+			Name string `env:"NAME"`
+		}{Name: "n"}},
+	} {
+		var v struct {
+			Sec *section `env:"SEC"`
+		}
+
+		require.NoError(t, Load(&v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{envs} })))
+		assert.Equal(t, want, v.Sec, envs)
+	}
 }
