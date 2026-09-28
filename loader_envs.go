@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"reflect"
 	"slices"
 	"strconv"
@@ -454,7 +455,11 @@ func textStruct(t reflect.Type) bool {
 //nolint:ireturn
 func decodeHooks() mapstructure.DecodeHookFunc {
 	return mapstructure.ComposeDecodeHookFunc(
+		plainHook,
+		yamlScalarHook,
 		jsonNumberHook,
+		numberRangeHook,
+		tomlTimeHook,
 		mapstructure.TextUnmarshallerHookFunc(),
 		splitListHook,
 		mapstructure.StringToTimeDurationHookFunc(),
@@ -560,18 +565,91 @@ func LoadEnvs(envs map[string]any, dest any) error {
 // jsonNumberHook turns json.Number from JSON files into a Go number before the
 // other hooks run: they expect a plain string or number and would misread it.
 func jsonNumberHook(_, _ reflect.Type, data any) (any, error) {
-	number, ok := data.(json.Number)
-	if !ok {
-		return data, nil
+	if number, ok := data.(json.Number); ok {
+		return jsonNumber(number), nil
 	}
 
+	return data, nil
+}
+
+// jsonNumber is an int64, else an uint64, else a float64: int64 values beyond 2^53
+// keep their precision.
+func jsonNumber(number json.Number) any {
 	if v, err := number.Int64(); err == nil {
-		return v, nil
+		return v
 	}
 
 	if v, err := strconv.ParseUint(number.String(), 10, 64); err == nil {
-		return v, nil
+		return v
 	}
 
-	return number.Float64()
+	v, _ := number.Float64() // the JSON decoder has checked the syntax; a huge number is ±Inf
+
+	return v
+}
+
+// plainHook gives a field of type any the plain values of a file, inside lists and
+// maps too: YAML scalars their resolved value, JSON numbers a float64, as encoding/json.
+func plainHook(_, to reflect.Type, data any) (any, error) {
+	if to.Kind() != reflect.Interface {
+		return data, nil
+	}
+
+	return plain(data), nil
+}
+
+func plain(data any) any {
+	switch value := data.(type) {
+	case yamlScalar:
+		return value.value
+	case json.Number:
+		v, _ := value.Float64()
+
+		return v
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = plain(item)
+		}
+
+		return out
+	case []any:
+		out := make([]any, len(value))
+		for i, item := range value {
+			out[i] = plain(item)
+		}
+
+		return out
+	}
+
+	return data
+}
+
+// numberRangeHook rejects a number that does not fit its field, as env and flags
+// do: mapstructure would wrap 70000 around in an uint16 and cut 2.9 to 2 in an int.
+// A float field takes any number but one beyond the range of float32.
+func numberRangeHook(_, to reflect.Type, data any) (any, error) {
+	from := reflect.ValueOf(data)
+	if data == nil || !isNumber(from.Kind()) || !isNumber(to.Kind()) {
+		return data, nil
+	}
+
+	value := from.Convert(to)
+
+	flipped := from.CanInt() && from.Int() < 0 && value.CanUint() || from.CanUint() && value.CanInt() && value.Int() < 0
+	fits := !flipped && value.Convert(from.Type()).Interface() == data // kept the sign, high bits and fraction
+
+	if value.CanFloat() {
+		fits = !math.IsInf(value.Float(), 0) || from.CanFloat() && math.IsInf(from.Float(), 0)
+	}
+
+	if !fits {
+		return nil, fmt.Errorf("%v does not fit in %s", data, to)
+	}
+
+	return data, nil
+}
+
+func isNumber(kind reflect.Kind) bool {
+	return kind >= reflect.Int && kind <= reflect.Float64 && kind != reflect.Uintptr
 }

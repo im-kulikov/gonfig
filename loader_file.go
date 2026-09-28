@@ -10,7 +10,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v3"
@@ -74,7 +76,7 @@ type fileFormat struct {
 // fileFormats are the supported file loaders.
 var fileFormats = map[ParserType]fileFormat{
 	ParserJSON: {tag: "json", parse: parseJSON, extensions: []string{".json"}},
-	ParserYAML: {tag: "yaml", parse: yaml.Unmarshal, extensions: []string{".yaml", ".yml"}},
+	ParserYAML: {tag: "yaml", parse: parseYAML, extensions: []string{".yaml", ".yml"}},
 	ParserTOML: {tag: "toml", parse: toml.Unmarshal, extensions: []string{".toml"}},
 }
 
@@ -204,3 +206,130 @@ func parseJSON(data []byte, tree any) error {
 
 	return nil
 }
+
+// yamlScalar is a scalar of a YAML file. A field reads its text, as it reads an
+// environment variable: a string gets 1.10 as written, a number that does not fit
+// is an error, a duration needs its unit. A field of type any, bool, a number or
+// time.Time takes the value YAML resolves the scalar to (true, 8080, a date).
+type yamlScalar struct {
+	text  string
+	value any
+}
+
+// yamlNode reads a YAML value into maps, lists and yamlScalar values; yaml.v3
+// resolves anchors, aliases and merge keys (<<) on the way.
+type yamlNode struct{ value any }
+
+func (y *yamlNode) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.MappingNode:
+		var nodes map[string]yamlNode
+		if err := node.Decode(&nodes); err != nil {
+			return err
+		}
+
+		tree := make(map[string]any, len(nodes))
+		for key, value := range nodes {
+			tree[key] = value.value
+		}
+
+		y.value = tree
+	case yaml.SequenceNode:
+		var nodes []yamlNode
+		if err := node.Decode(&nodes); err != nil {
+			return err
+		}
+
+		list := make([]any, len(nodes))
+		for i, value := range nodes {
+			list[i] = value.value
+		}
+
+		y.value = list
+	default:
+		var value any
+		if err := node.Decode(&value); err != nil {
+			return err
+		}
+
+		if value != nil { // null leaves the field as it is
+			y.value = yamlScalar{text: node.Value, value: value}
+		}
+	}
+
+	return nil
+}
+
+func parseYAML(data []byte, tree any) error {
+	var root yamlNode
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return err
+	}
+
+	switch value := root.value.(type) {
+	case nil: // empty
+	case map[string]any:
+		*tree.(*map[string]any) = value
+	default:
+		return fmt.Errorf("the file holds %T, not a mapping of keys", plain(value))
+	}
+
+	return nil
+}
+
+// yamlScalarHook gives a field the text or the value of a YAML scalar, see yamlScalar.
+// A pointer gets it for its element.
+func yamlScalarHook(_, to reflect.Type, data any) (any, error) {
+	scalar, ok := data.(yamlScalar)
+	if !ok || to.Kind() == reflect.Pointer {
+		return data, nil
+	}
+
+	resolved := reflect.TypeOf(scalar.value)
+
+	switch {
+	case to == resolved:
+		return scalar.value, nil
+	case to == durationType || reflect.PointerTo(to).Implements(unmarshalType):
+		return scalar.text, nil
+	case to.Kind() == reflect.Bool:
+		return yamlBool(scalar), nil
+	case isNumber(to.Kind()) && isNumber(resolved.Kind()):
+		return scalar.value, nil // numberRangeHook checks that it fits
+	}
+
+	return scalar.text, nil
+}
+
+// yamlBool accepts the booleans of YAML 1.1 in a bool field, as yaml.v3 does.
+func yamlBool(scalar yamlScalar) any {
+	switch scalar.text {
+	case "y", "Y", "yes", "Yes", "YES", "on", "On", "ON":
+		return true
+	case "n", "N", "no", "No", "NO", "off", "Off", "OFF":
+		return false
+	}
+
+	return scalar.text
+}
+
+// tomlTimeHook turns a TOML local date or date-time into a time.Time in the local
+// time zone, as go-toml does; a time of day without a date is an error.
+func tomlTimeHook(_, to reflect.Type, data any) (any, error) {
+	if to != timeType {
+		return data, nil
+	}
+
+	switch value := data.(type) {
+	case toml.LocalDate:
+		return value.AsTime(time.Local), nil
+	case toml.LocalDateTime:
+		return value.AsTime(time.Local), nil
+	case toml.LocalTime:
+		return nil, fmt.Errorf("the time of day %s has no date", value)
+	}
+
+	return data, nil
+}
+
+var timeType = reflect.TypeFor[time.Time]()
