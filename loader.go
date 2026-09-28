@@ -17,7 +17,8 @@ import (
 type Error string
 
 // Config controls a loader. The order of the sources is fixed, each one overriding
-// the previous ones (see New); the Skip* fields turn a built-in source off.
+// the previous ones (see New); the Skip* fields turn a step off, with a custom parser
+// of its type (see ParserType).
 type Config struct {
 	SkipDefaults bool // SkipDefaults set to true will not load config from the 'default' tag.
 	SkipEnv      bool // SkipEnv set to true will not load config from environment variables.
@@ -331,8 +332,8 @@ func newLoader(c Config, output any) *loader {
 
 // setLoaderDefaults fills what the options left unset: Envs and Args of the process,
 // and the built-in parsers that Config.Skip* does not disable and a custom parser
-// of the same type does not replace. It runs after the options, so the settings
-// changed through WithConfig apply.
+// of the same type does not replace; a step Config.Skip* disables runs no parser.
+// It runs after the options, so the settings changed through WithConfig apply.
 func (l *loader) setLoaderDefaults() {
 	if l.Envs == nil {
 		l.Envs = os.Environ()
@@ -353,7 +354,10 @@ func (l *loader) setLoaderDefaults() {
 	}
 
 	for _, builtin := range builtins {
-		if _, replaced := l.groups[builtin.parser.Type()]; !replaced && !builtin.skip {
+		switch _, replaced := l.groups[builtin.parser.Type()]; {
+		case builtin.skip: // the step is off, whatever parser it has: a custom one too
+			delete(l.groups, builtin.parser.Type())
+		case !replaced:
 			l.groups[builtin.parser.Type()] = builtin.parser
 		}
 	}

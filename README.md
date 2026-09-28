@@ -76,8 +76,9 @@ Every source overrides the previous ones:
 3. **Environment variables.**
 4. **Flags.**
 
-The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off (`SkipFlags` also
-turns off the config path). After loading, `required` fields are checked and `Validate()` is called.
+The order is fixed; `Config.SkipDefaults`, `SkipEnv` and `SkipFlags` turn a source off, a custom parser that
+replaces it too (`SkipFlags` also turns off the config path). After loading, `required` fields are checked and
+`Validate()` is called.
 
 ## Struct tags
 
