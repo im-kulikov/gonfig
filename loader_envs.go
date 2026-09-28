@@ -116,44 +116,13 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 			return ""
 		}
 
-		var name string
-		var unreachable bool
-		for parent := field; parent != nil; parent = parent.Owner {
-			tag := parent.Field.Tag.Get(envTag)
-			tmp := strings.Split(tag, ",")
-			env := tmp[0]
-
-			if env == "-" {
-				unreachable = true
-
-				break
-			}
-
-			if env == "" && parent.Owner != nil {
-				if slices.Contains(tmp, "squash") || parent.Field.Anonymous {
-					continue
-				}
-
-				unreachable = true
-
-				break
-			}
-
-			if env == "" {
-				continue
-			}
-
-			if name == "" {
-				name = env
-
-				continue
-			}
-
-			name = env + envDelimiter + name
+		name, ok := envNameOf(field)
+		if value := derefType(field.Value.Type()); !ok || value.Kind() == reflect.Struct && !textStruct(value) {
+			continue // not set by env, or a section of a type that contains itself: no single variable
 		}
 
-		if unreachable || name == "" {
-			continue
+		if field.Value.Kind() == reflect.Map { // its entries are variables of their own
+			name += envDelimiter + "<key>"
 		}
 
 		if _, ok := exists[name]; ok {
@@ -193,6 +162,45 @@ func UsageOfEnvs(dest any, opts ...EnvUsageOption) string {
 	}
 
 	return fmt.Sprintf("Environment variables:\n%s", strings.Join(out, "\n"))
+}
+
+// envNameOf returns the environment variable of a field, without the prefix: the env
+// tags from the top struct down, joined with "_". An embedded struct adds no segment,
+// as mapstructure inlines it, and nor does a struct tagged `env:",squash"`. False if env
+// cannot set the field: no env tag, or one on the way, or `env:"-"`.
+func envNameOf(field *ReflectValue) (string, bool) {
+	var name string
+
+	for parent := field; parent.Owner != nil; parent = parent.Owner {
+		parts := strings.Split(parent.Field.Tag.Get(envTag), ",")
+
+		switch {
+		case parts[0] == "-":
+			return "", false
+		case parent != field && parent.Field.Anonymous,
+			parts[0] == "" && slices.Contains(parts[1:], envInlineOption):
+		case parts[0] == "":
+			return "", false
+		case name == "":
+			name = parts[0]
+		default:
+			name = parts[0] + envDelimiter + name
+		}
+	}
+
+	return name, name != ""
+}
+
+// lookupEnv returns the value of the variable name in envs, the last one set, as the
+// env loader takes it; the name matches case-insensitively, as a field does.
+func lookupEnv(envs []string, name, otherwise string) string {
+	for _, env := range slices.Backward(envs) {
+		if key, value, ok := strings.Cut(env, envPairDelim); ok && strings.EqualFold(key, name) {
+			return value
+		}
+	}
+
+	return otherwise
 }
 
 // envPrefix returns the prefix of environment variable names with exactly one
@@ -422,7 +430,7 @@ func resolveClashes(tree map[string]any, t reflect.Type, inlined ...reflect.Type
 		container := isContainer(kind)
 
 		switch key, found := lookupKey(tree, parts[0]); {
-		case parts[0] == "" && container && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
+		case envInlined(field, parts, kind):
 			resolveClashes(tree, kind, append(inlined, t)...) // inlined: its fields read from this level
 		case !found:
 		case container:
@@ -441,6 +449,13 @@ func resolveClashes(tree map[string]any, t reflect.Type, inlined ...reflect.Type
 	}
 
 	return tree
+}
+
+// envInlined reports whether env reads the fields of a struct field from the level of
+// its parent: an embedded struct, whatever its tag, or one tagged `env:",squash"`.
+func envInlined(field reflect.StructField, parts []string, kind reflect.Type) bool {
+	return kind.Kind() == reflect.Struct && !textStruct(kind) &&
+		(field.Anonymous || parts[0] == "" && slices.Contains(parts[1:], envInlineOption))
 }
 
 // setsField reports whether the names under the name of a struct or a map t set
@@ -462,7 +477,7 @@ func setsField(tree map[string]any, t reflect.Type, inlined ...reflect.Type) boo
 		_, own := nested[""]
 
 		switch {
-		case parts[0] == "" && isContainer(kind) && (field.Anonymous || slices.Contains(parts[1:], envInlineOption)):
+		case envInlined(field, parts, kind):
 			if setsField(tree, kind, append(inlined, t)...) {
 				return true
 			}

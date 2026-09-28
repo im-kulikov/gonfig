@@ -241,7 +241,7 @@ func ReflectFieldsOf(in any, options ReflectOptions) iter.Seq2[*ReflectValue, er
 		walk = func(elem *ReflectValue) bool {
 			for i := range elem.Value.NumField() {
 				fv := elem.Value.Field(i)
-				if !options.IsValid(fv) {
+				if !options.takes(elem.Value.Type().Field(i), fv) {
 					continue
 				}
 
@@ -291,6 +291,13 @@ type visit struct {
 
 // visitOf is the struct a non-nil pointer p points to.
 func visitOf(p reflect.Value) visit { return visit{p.Pointer(), p.Type().Elem()} }
+
+// takes reports whether the walk takes the field fv: it passes the options, or it is an
+// embedded struct, whose fields are checked one by one: an unexported one fails CanSet,
+// but its exported fields are promoted and settable.
+func (o *ReflectOptions) takes(field reflect.StructField, fv reflect.Value) bool {
+	return o.IsValid(fv) || field.Anonymous && fv.Kind() == reflect.Struct
+}
 
 // section reports whether v is a non-nil pointer to a struct the walk goes into.
 func (o *ReflectOptions) section(v reflect.Value) bool {

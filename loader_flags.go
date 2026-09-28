@@ -199,6 +199,8 @@ var pflagZeroLists = []string{"intSlice", "stringSlice", "stringArray"}
 // arguments for the config path, from --config/-c with DefaultConfigFlag or from the
 // string field tagged `flag:"...,config:true"`, and stores it in l.config for the
 // parsers that implement ParserConfigSetter. Unknown flags are left to the flags step.
+// Without the flag the field gives the path of its environment variable, else its own
+// value: a `default` tag, WithDefaults or the code, as sources override each other.
 func parseConfigPath(l *loader) *parserFunc {
 	return &parserFunc{name: ParserConfigSet, call: parseDefaultConfigPath(l, func(val any) error {
 		flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
@@ -222,7 +224,12 @@ func parseConfigPath(l *loader) *parserFunc {
 				return fmt.Errorf("(config-path) %w", err)
 			}
 
-			flags.StringVarP(&l.config, opts.FlagFullName, opts.shorthand(), "", opts.FieldUsage)
+			l.config = elem.Value.String()
+			if name, ok := envNameOf(elem); ok && !l.SkipEnv {
+				l.config = lookupEnv(l.Envs, envPrefix(l.EnvPrefix)+name, l.config)
+			}
+
+			flags.StringVarP(&l.config, opts.FlagFullName, opts.shorthand(), l.config, opts.FieldUsage)
 		}
 
 		if err := flags.Parse(l.Args); err != nil && !errors.Is(err, pflag.ErrHelp) {

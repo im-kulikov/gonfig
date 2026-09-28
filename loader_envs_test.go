@@ -506,3 +506,23 @@ func TestLoadEnvs_MapKeys(t *testing.T) {
 	assert.Equal(t, map[string]*db{"x": {Host: "p"}}, config.Ptrs)
 	assert.Equal(t, map[string]map[string]int{"a": {"b_c": 1}}, config.Nested)
 }
+
+type usageDB struct {
+	Host string `env:"HOST"`
+}
+
+func TestUsageOfEnvs_EmbeddedAndMaps(t *testing.T) {
+	var config struct {
+		usageDB `env:"DB"` // embedded: inlined whatever its tag, as the loader reads it
+
+		Labels map[string]string `env:"LABELS"`
+	}
+
+	usage := UsageOfEnvs(&config)
+	assert.Contains(t, usage, "'HOST' <string>")
+	assert.NotContains(t, usage, "DB_HOST")
+	assert.Contains(t, usage, "'LABELS_<key>' <map[string]string>")
+
+	require.NoError(t, LoadEnvs(PrepareEnvs([]string{"HOST=h", "DB_HOST=wrong"}, ""), &config))
+	assert.Equal(t, "h", config.Host)
+}
