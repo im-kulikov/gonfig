@@ -106,3 +106,20 @@ func TestDefaultConfigFlag_Internal(t *testing.T) {
 		require.Equal(t, "config.yaml", mock.path)
 	})
 }
+
+func TestConfigField_InvalidFlag(t *testing.T) {
+	load := func(v any) error {
+		return Load(v, WithConfig(func(c *Config) { c.Args, c.Envs = []string{}, []string{} }))
+	}
+
+	var long struct {
+		Path string `flag:"config,short:cfg,config:true"`
+	}
+	require.ErrorContains(t, load(&long), `(config-path) shorthand is more than one ASCII character "cfg"`)
+
+	var twice struct {
+		Path  string `flag:"config,config:true"`
+		Other string `flag:"config,config:true"`
+	}
+	require.ErrorIs(t, load(&twice), ErrFlagRedefined)
+}

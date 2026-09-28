@@ -135,17 +135,8 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 			continue
 		}
 
-		if len(options.FlagShortName) > 1 {
-			return fmt.Errorf("(flags) shorthand is more than one ASCII character %q", options.FlagShortName)
-		}
-
-		// pflag panics on a redefined flag; report the field instead.
-		if flagSet.Lookup(options.FlagFullName) != nil {
-			return fmt.Errorf("(flags) field %s: %w: --%s", elem.Field.Name, ErrFlagRedefined, options.FlagFullName)
-		}
-
-		if short := options.FlagShortName; short != "" && short != "-" && flagSet.ShorthandLookup(short) != nil {
-			return fmt.Errorf("(flags) field %s: %w: -%s", elem.Field.Name, ErrFlagRedefined, short)
+		if err = checkFlag(flagSet, elem.Field.Name, options); err != nil {
+			return fmt.Errorf("(flags) %w", err)
 		}
 
 		if err = prepareFlag(flagSet, elem.Value, options); err != nil {
@@ -153,6 +144,23 @@ func PrepareFlags(flagSet *pflag.FlagSet, dest any) error {
 		}
 
 		flagSet.Lookup(options.FlagFullName).DefValue = flagDefault(elem, options)
+	}
+
+	return nil
+}
+
+// checkFlag returns the error pflag would panic with when the flag of a field is added.
+func checkFlag(flagSet *pflag.FlagSet, field string, options TagOptions) error {
+	if len(options.FlagShortName) > 1 {
+		return fmt.Errorf("shorthand is more than one ASCII character %q", options.FlagShortName)
+	}
+
+	if flagSet.Lookup(options.FlagFullName) != nil {
+		return fmt.Errorf("field %s: %w: --%s", field, ErrFlagRedefined, options.FlagFullName)
+	}
+
+	if short := options.shorthand(); short != "" && flagSet.ShorthandLookup(short) != nil {
+		return fmt.Errorf("field %s: %w: -%s", field, ErrFlagRedefined, short)
 	}
 
 	return nil
@@ -208,6 +216,10 @@ func parseConfigPath(l *loader) *parserFunc {
 			}
 			if elem.Value.Kind() != reflect.String {
 				return fmt.Errorf("(config-path) expect string, got %q", elem.Value.Kind())
+			}
+
+			if err = checkFlag(flags, elem.Field.Name, opts); err != nil {
+				return fmt.Errorf("(config-path) %w", err)
 			}
 
 			flags.StringVarP(&l.config, opts.FlagFullName, opts.shorthand(), "", opts.FieldUsage)
