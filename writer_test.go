@@ -323,6 +323,28 @@ type shadowBase struct {
 	Port int    `yaml:"port" json:"port" toml:"port"`
 }
 
+func TestWrite_TextMapKeys(t *testing.T) {
+	type config struct {
+		Times map[time.Time]string `yaml:"times" json:"times" toml:"times" env:"TIMES"`
+	}
+
+	want := config{Times: map[time.Time]string{time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC): "x"}}
+
+	for format, kind := range fileFormatsUnderTest {
+		t.Run(string(format), func(t *testing.T) {
+			output := write(t, &want, format)
+
+			var got config
+			require.NoError(t, loadFile(t, kind, output, &got), output)
+			assert.Equal(t, want, got)
+		})
+	}
+
+	var got config
+	loadEnvOutput(t, write(t, &want, FormatEnv), &got)
+	assert.Equal(t, want, got)
+}
+
 func TestWrite_EmptySections(t *testing.T) {
 	type config struct {
 		Feature *struct{}           `yaml:"feature" json:"feature" toml:"feature"`
